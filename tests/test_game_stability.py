@@ -445,6 +445,26 @@ class GameStabilityToolTests(unittest.TestCase):
         self.assertIs(result, purged)
         self.assertEqual(driver.calls, ["wait 10"])
 
+    def test_event_room_grid_allows_unflagged_removal_to_shrink(self):
+        # Regression test for the Act 2 "Ancient Writing" event (Elegance:
+        # "Remove a card from your deck"), which opens a GRID screen with
+        # for_purge == false and no grid_operation, since AgentStateFixes
+        # doesn't classify event-driven removals. See STS1_SETUP_LOG.md.
+        deck = [{"name": "Strike"}, {"name": "Defend"}]
+        before = observation(
+            "GRID",
+            deck=deck,
+            room_type="EventRoom",
+            screen_state={"for_purge": False},
+        )
+        removed = observation("EVENT", deck=deck[1:])
+        driver = Driver(removed)
+
+        result = self.settle(before, removed, "choose 0", driver)
+
+        self.assertIs(result, removed)
+        self.assertEqual(driver.calls, ["wait 10"])
+
     def test_neow_multi_remove_allows_incorrect_unflagged_grid_to_shrink(self):
         deck = [{"name": f"Card {index}"} for index in range(11)]
         before = observation(

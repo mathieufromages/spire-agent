@@ -382,10 +382,23 @@ def _grid_expected_deck_size(
     if pandora_confirmation:
         expected = _deck_size(before) + len(confirmation_cards)
         return expected if _deck_size(after) < expected else None
+    # Event-driven grid removals (e.g. the Act 2 "Ancient Writing" event's
+    # [Elegance] "Remove a card from your deck" option) open a GRID screen with
+    # for_purge == false and no grid_operation, because AgentStateFixes'
+    # exposeGridOperation() only classifies for_purge / for_transform /
+    # for_upgrade plus Neow rewards -- it doesn't know about event-driven
+    # removals. Without this, a legitimate deck shrink here is misread as a
+    # desync (smoke test died on this at Act 2 floor 28, seed 2ACEGSXXAMYQJ;
+    # see STS1_SETUP_LOG.md). room_type stays "EventRoom" for the whole room,
+    # so use it as a second, independent "this is an expected removal" signal
+    # alongside for_purge/grid_operation, same as the room_type checks
+    # elsewhere in this module (e.g. "truevictoryroom").
+    room_type = str(_game(before).get("room_type") or "").casefold()
     if (
         family != "choose"
         or screen_state.get("for_purge")
         or screen_state.get("grid_operation") == "REMOVE"
+        or room_type == "eventroom"
     ):
         return None
     before_size = _deck_size(before)
