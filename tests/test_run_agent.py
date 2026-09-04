@@ -160,12 +160,13 @@ class RuntimeEntryTests(unittest.TestCase):
             "defect.winning_path",
         )
 
-    def test_default_agent_config_selects_winning_path_and_mcts(self):
+    def test_default_agent_config_selects_heuristic_agents_and_mcts(self):
         config = load_runtime_config(ROOT / "config.yaml")
 
-        self.assertEqual(config.map, "llm")
-        self.assertEqual(config.build, "winning_path")
+        self.assertEqual(config.map, "heuristic")
+        self.assertEqual(config.build, "heuristic")
         self.assertEqual(config.combat, "mcts")
+        self.assertFalse(config.requires_llm)
         self.assertEqual(config.prompt_language, PromptLanguage.ENGLISH)
         self.assertEqual((config.character, config.ascension), ("IRONCLAD", 20))
         self.assertEqual(config.seed, "random")
@@ -174,7 +175,7 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertFalse(config.hud)
         self.assertEqual(config.runtime_dir, ROOT / "runtime")
         self.assertEqual(config.log_dir, ROOT)
-        self.assertEqual(config.mcts_threads, 12)
+        self.assertEqual(config.mcts_threads, 8)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
 
     def test_agent_config_validates_size_without_forcing_aspect_ratio(self):

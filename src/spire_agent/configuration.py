@@ -41,11 +41,25 @@ class RuntimeConfig:
     mcts_adaptive_time_ms: int
     mcts_adaptive_simulations: int
 
+    @property
+    def requires_llm(self) -> bool:
+        """True when any selected agent implementation calls a language model."""
+
+        return any(
+            getattr(self, name) in values
+            for name, values in _LLM_IMPLEMENTATIONS.items()
+        )
+
 
 _IMPLEMENTATIONS = {
+    "map": {"heuristic", "llm"},
+    "build": {"heuristic", "winning_path", "llm"},
+    "combat": {"mcts", "llm"},
+}
+_LLM_IMPLEMENTATIONS = {
     "map": {"llm"},
     "build": {"winning_path", "llm"},
-    "combat": {"mcts", "llm"},
+    "combat": {"llm"},
 }
 _KEYS = {
     "agents": set(_IMPLEMENTATIONS),

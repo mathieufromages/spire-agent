@@ -2,9 +2,12 @@
 prompt_language: en
 
 # Agent implementations. Available values are listed on each line.
+# heuristic map/build + mcts combat run with no LLM at all (no MODEL_URL /
+# MODEL / API_KEY needed). llm map, winning_path build (card picker plus LLM
+# escalation), and llm combat require those three environment variables.
 agents:
-  map: llm              # llm
-  build: winning_path   # winning_path | llm
+  map: heuristic        # heuristic | llm
+  build: heuristic      # heuristic | winning_path | llm
   combat: mcts          # mcts | llm
 
 run:
@@ -28,6 +31,7 @@ paths:
 
 # OpenAI-compatible endpoint. Empty values use MODEL_URL and MODEL.
 # Keep API_KEY in the environment; do not put it in this file.
+# Only read when an agent above is llm or winning_path.
 llm:
   base_url:
   model:

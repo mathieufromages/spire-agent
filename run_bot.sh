@@ -16,4 +16,12 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+# SPIRE_NO_LLM=1 ./run_bot.sh ... drops the LLM credentials sourced from .env
+# so a run provably uses only the rule-based agents (config.yaml agents:
+# map/build heuristic, combat mcts). With an llm/winning_path agent selected
+# the bot then refuses to start instead of silently calling the model.
+if [[ -n "${SPIRE_NO_LLM:-}" ]]; then
+  unset API_KEY MODEL_URL MODEL
+fi
+
 exec uv run spire-agent "$@"

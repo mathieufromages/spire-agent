@@ -205,22 +205,48 @@ def policy_decision(
     reason: str,
     *,
     payload: Mapping[str, Any] | None = None,
+    targets: Sequence[str] = (),
 ) -> Decision:
-    """Translate one domain-policy action through Build UI continuation rules."""
+    """Translate one domain-policy action through Build UI continuation rules.
 
+    ``targets`` names the deck cards a selector-opening choice will pick, in
+    execution order; they are validated against the current deck exactly like
+    LLM-provided targets.
+    """
+
+    state = request.state
     action = str(command).split(" ", 1)[0]
-    if action not in request.state.screen.commands:
+    if action not in state.screen.commands:
         raise BuildError(
             f"policy selected unavailable action {action!r}; "
-            f"available actions are {list(request.state.screen.commands)!r}"
+            f"available actions are {list(state.screen.commands)!r}"
         )
+    target_names = tuple(str(target).strip() for target in targets if str(target).strip())
+    if target_names:
+        parts = str(command).split()
+        choice_id = int(parts[1]) if action == "choose" and len(parts) == 2 else None
+        if choice_id is None or not _opens_selector(state, choice_id):
+            raise BuildError("targets are only valid for an action that opens a card selector")
+        target_names = _legalize_removal_targets(state, choice_id, target_names)
+        _validate_selection_targets(state, choice_id, target_names)
     return Decision(
         command,
         source,
         reason,
-        continuation=_llm_continuation(request, action, ()),
-        payload=payload or {},
+        continuation=_llm_continuation(request, action, target_names),
+        payload={
+            **(payload or {}),
+            **({"targets": target_names} if target_names else {}),
+        },
     )
+
+
+def selection_kinds(state: GameState, choice_id: int) -> frozenset[str]:
+    """Return the card-selector kinds (remove/transform/upgrade/duplicate) a choice opens."""
+
+    if choice_id < 0 or choice_id >= len(state.screen.choices):
+        return frozenset()
+    return _selection_kinds(state, choice_id)
 
 
 def llm_decision(
@@ -760,4 +786,5 @@ __all__ = [
     "llm_decision",
     "policy_decision",
     "reward_type",
+    "selection_kinds",
 ]

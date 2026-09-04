@@ -55,7 +55,8 @@ from spire_agent.subagents import (
     create_map_agent,
 )
 from spire_agent.tools.build_flow import build_choice_policy
-from spire_agent.tools.map import DefaultMapTool, EncounterReadiness
+from spire_agent.tools.heuristics import create_heuristic_build_agent
+from spire_agent.tools.map import DefaultMapTool, EncounterReadiness, HeuristicMapTool
 from spire_agent.tools.mcts import CombatMCTS, DefaultCombatTool, PotionGate
 from spire_agent.tools.llm_agents import (
     create_llm_build_agent,
@@ -91,11 +92,16 @@ def runtime_registry(
     combat_implementation: str = "mcts",
     character: str = "IRONCLAD",
 ) -> SubAgentRegistry:
-    if map_implementation != "llm":
+    if map_implementation not in {"llm", "heuristic"}:
         raise AgentConfigError(f"cannot compose map agent {map_implementation!r}")
     map_agent = create_map_agent(map_tool)
     if build_implementation == "llm":
         build_agent = create_llm_build_agent(llm, prompt_language)
+    elif build_implementation == "heuristic":
+        build_agent = create_heuristic_build_agent(
+            create_card_picker(character),
+            choice_policy=build_choice_policy,
+        )
     elif build_implementation == "winning_path":
         build_agent = create_build_agent(
             llm,
@@ -196,16 +202,26 @@ def run(
         out_dir / "agent_overlay.json",
         display=hud,
     )
-    llm = create_run_llm_client(
-        run_directory,
-        base_url=config.llm_base_url,
-        model=config.llm_model,
-        stream_event=hud_observer.on_llm_event,
-    )
-    map_tool = DefaultMapTool(
-        llm,
-        config.prompt_language,
-        EncounterReadiness(card_eval_binary, run_directory),
+    llm: object | None = None
+    if config.requires_llm:
+        try:
+            llm = create_run_llm_client(
+                run_directory,
+                base_url=config.llm_base_url,
+                model=config.llm_model,
+                stream_event=hud_observer.on_llm_event,
+            )
+        except ValueError as error:
+            raise AgentConfigError(
+                f"agents map={config.map} build={config.build} combat={config.combat} "
+                f"need a language model but {error}; set MODEL_URL, MODEL, and API_KEY "
+                "or select the heuristic map/build agents in config.yaml"
+            ) from error
+    readiness = EncounterReadiness(card_eval_binary, run_directory)
+    map_tool: MapTool = (
+        DefaultMapTool(llm, config.prompt_language, readiness)
+        if config.map == "llm"
+        else HeuristicMapTool(readiness)
     )
     combat_tool = (
         DefaultCombatTool(
