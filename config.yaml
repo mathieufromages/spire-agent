@@ -34,7 +34,7 @@ llm:
 
 # Seconds to wait for each game-bridge response.
 communication:
-  timeout: 5.0
+  timeout: 30.0
 
 # Presentation delay before each historical replay action. Use 0 for fastest replay.
 replay:
@@ -43,7 +43,7 @@ replay:
 # Combat search budgets.
 mcts:
   simulations: 100000          # normal search simulation limit
-  threads: 12                  # parallel MCTS workers
+  threads: 8                   # parallel MCTS workers (16-core box, other jobs running)
   max_time_ms: 10000           # normal search time limit
   adaptive_time_ms: 30000      # difficult-state time limit
   adaptive_simulations: 500000 # difficult-state simulation limit
