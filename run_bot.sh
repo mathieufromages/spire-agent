@@ -37,4 +37,18 @@ else
   printf '646570\n' > runtime/lib/steam_appid.txt
 fi
 
+# Headless mode: SPIRE_HEADLESS=1 runs the bot (and therefore the game it
+# spawns) inside gamescope's headless backend, an off-screen GPU-accelerated
+# X/Wayland display. Needed for unattended runs: when the physical monitor
+# powers down, XWayland reports no display modes and LWJGL dies in
+# LinuxDisplay.getAvailableDisplayModes (22 failed loop runs on 2026-09-05).
+# The window size follows config.yaml run.window_size (default 1600x900).
+if [[ "${SPIRE_HEADLESS:-0}" == "1" && -z "${SPIRE_HEADLESS_INNER:-}" ]]; then
+  size=$(grep -E '^\s*window_size:' config.yaml | head -1 | sed -E 's/.*:\s*([0-9]+)x([0-9]+).*/\1 \2/')
+  read -r gs_w gs_h <<< "${size:-1600 900}"
+  [[ "$gs_w" =~ ^[0-9]+$ && "$gs_h" =~ ^[0-9]+$ ]] || { gs_w=1600; gs_h=900; }
+  export SPIRE_HEADLESS_INNER=1
+  exec gamescope --backend headless -W "$gs_w" -H "$gs_h" -- "$0" "$@"
+fi
+
 exec uv run spire-agent "$@"
