@@ -185,10 +185,15 @@ def _score_rooms(rooms: Sequence[str], context: Mapping[str, float]) -> float:
         elif room == "$":
             shops += 1
             expected_gold = gold + 12.0 * index
+            # Gold is only worth what a shop turns it into: a removal, a core
+            # card, a relic, potions.  Run 11 (2026-09-05) reached floor 48
+            # with 1038 gold after an Act 2 route with no shop at all.
+            spendable = min(max(expected_gold, 0.0), 600.0)
             if shops == 1:
-                score += 1.6 if expected_gold >= 150 else 0.6
+                score += (0.6 if expected_gold < 150 else 1.6) + max(0.0, spendable - 150.0) / 150.0
             else:
-                score += 0.25
+                score += 0.25 + max(0.0, spendable - 300.0) / 300.0
+            gold = max(0.0, expected_gold - min(expected_gold, 250.0)) - 12.0 * index
         elif room == "T":
             score += 1.2
         else:

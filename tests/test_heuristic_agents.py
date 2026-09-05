@@ -118,6 +118,16 @@ class HeuristicMapTests(unittest.TestCase):
         self.assertEqual(wounded.command, "choose 1")
         self.assertIn("Rest", wounded.payload[RUN_ROUTE_KEY]["planned_rooms"])
 
+    def test_rich_run_routes_through_the_shop(self):
+        from spire_agent.tools.map.heuristic import _score_rooms
+        base = {"act": 2, "floor": 20, "hp": 70.0, "max_hp": 80.0, "ascension": 0.0, "rest_heals": 1.0, "regal_pillow": 0.0}
+        poor = _score_rooms(["M", "$", "M"], {**base, "gold": 60.0})
+        poor_alt = _score_rooms(["M", "M", "M"], {**base, "gold": 60.0})
+        rich = _score_rooms(["M", "$", "M"], {**base, "gold": 500.0})
+        rich_alt = _score_rooms(["M", "M", "M"], {**base, "gold": 500.0})
+        self.assertGreater(rich - rich_alt, poor - poor_alt)
+        self.assertGreater(rich, rich_alt + 2.0)
+
     def test_single_boss_entrance_is_forced(self):
         state = GameState(
             owner_hint=AgentKind.MAP,
@@ -155,6 +165,15 @@ class HeuristicRestTests(unittest.TestCase):
         calm = {RUN_ROUTE_KEY: {"planned_rooms": ["Rest", "Event", "Rest", "Boss"]}}
         decision = build_agent().decide(request(state, shared=calm))
         self.assertEqual(decision.command, "choose 1")
+
+    def test_act_three_recall_rest_is_not_a_heal_opportunity(self):
+        state = build_state(
+            "REST", choices=("rest", "smith"), facts={"current_hp": 59, "max_hp": 86, "act": 3, "floor": 47},
+        )
+        shared = {RUN_ROUTE_KEY: {"planned_rooms": ["Rest", "Shop", "Rest", "Boss"]}}
+        decision = build_agent().decide(request(state, shared=shared))
+        self.assertEqual(decision.command, "choose 0")
+        self.assertIn("threshold 78%", decision.reason)
 
     def test_recall_stays_deferred_before_act_three(self):
         state = build_state("REST", choices=("rest", "smith", "recall"), facts={"current_hp": 79})

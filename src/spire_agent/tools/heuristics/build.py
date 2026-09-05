@@ -30,7 +30,7 @@ from spire_agent.tools.build_flow import (
     policy_decision,
     selection_kinds,
 )
-from spire_agent.tools.run_keys import RUN_ROUTE_KEY
+from spire_agent.tools.run_keys import RUN_ROUTE_KEY, key_view
 from spire_agent.tools.winning_path.card_policy import CardRewardError
 
 from . import cards as card_values
@@ -315,7 +315,12 @@ class HeuristicBuildStage:
         ratio = current / maximum
         relics = {normalize_event(name) for name in _names(state.facts.get("relics"))}
         heals = not (relics & _NO_HEAL_RELICS)
-        threshold = _rest_threshold(request.shared)
+        needs_ruby = False
+        try:
+            needs_ruby = _int(state.facts.get("act")) >= 3 and not key_view(request.shared, state)["ruby"]
+        except (KeyError, TypeError, ValueError):
+            needs_ruby = False
+        threshold = _rest_threshold(request.shared, skip_final_rest=needs_ruby)
         deck = state.facts.get("deck")
         rest, smith = find("rest"), find("smith")
         if rest is not None and heals and ratio < threshold:
@@ -627,7 +632,14 @@ def _candidate_score(row: Mapping[str, Any]) -> float:
     return score
 
 
-def _rest_threshold(shared: Mapping[str, object]) -> float:
+def _rest_threshold(shared: Mapping[str, object], *, skip_final_rest: bool = False) -> float:
+    """HP ratio below which the bot rests instead of smithing.
+
+    ``skip_final_rest``: in Act 3 without the Ruby Key the last rest site
+    before the boss is spent on Recall, so it is not a heal opportunity
+    (run 11 smithed at 59/86 two floors from the boss because of it).
+    """
+
     route = shared.get(RUN_ROUTE_KEY)
     rooms: list[str] = []
     if isinstance(route, Mapping):
@@ -641,9 +653,11 @@ def _rest_threshold(shared: Mapping[str, object]) -> float:
                 if isinstance(row, Mapping)
             ]
     upcoming = rooms[1:] if rooms else []
-    for room in upcoming:
-        name = normalize_event(room)
-        if name in {"rest", "r"}:
+    names = [normalize_event(room) for room in upcoming]
+    rest_indexes = [i for i, name in enumerate(names) if name in {"rest", "r"}]
+    final_rest = rest_indexes[-1] if skip_final_rest and rest_indexes else None
+    for index, name in enumerate(names):
+        if name in {"rest", "r"} and index != final_rest:
             break
         if name in {"boss"}:
             return _REST_THRESHOLD_BOSS
