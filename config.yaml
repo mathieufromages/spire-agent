@@ -51,14 +51,13 @@ communication:
 replay:
   action_delay_seconds: 0.5
 
-# Combat search budgets, tuned for pace at low ascension. Upstream defaults
-# were 100000 sims / 10000 ms / 30000 ms adaptive; a measured A0 run spent 80%
-# of 2 h inside MCTS with half the searches hitting the 10 s cap. Re-timed on
-# recorded states, 20000 sims / 1500 ms returns in ~1.6 s. Restore the upstream
-# numbers for high ascension.
+# Combat search budgets (upstream defaults; MCTS quality is kept, pace comes
+# from SuperFastMode and from threads). In a measured A0 run MCTS was ~80% of
+# wall time with half the searches hitting the 10 s cap; lowering
+# max_time_ms/simulations speeds runs up at the cost of play quality.
 mcts:
-  simulations: 20000           # normal search simulation limit (per thread)
-  threads: 8                   # parallel MCTS workers (16-core box; raise to 12 when the box is idle)
-  max_time_ms: 1500            # normal search time limit
-  adaptive_time_ms: 4000       # difficult-state time limit
-  adaptive_simulations: 60000  # difficult-state simulation limit
+  simulations: 100000          # normal search simulation limit (per thread)
+  threads: 8                   # parallel MCTS workers (16-core box; raise to 12-14 when the box is idle)
+  max_time_ms: 10000           # normal search time limit
+  adaptive_time_ms: 30000      # difficult-state time limit
+  adaptive_simulations: 500000 # difficult-state simulation limit
