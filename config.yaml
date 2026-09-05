@@ -25,7 +25,9 @@ run:
   # Additional ModTheSpire mod ids to load from runtime/mods/<ModId>.jar.
   # AchievementEnabler lets Steam achievements unlock while mods are loaded
   # (needs Steam running and runtime/lib/steam_appid.txt, see run_bot.sh).
-  extra_mods: [AchievementEnabler]
+  # superfastmode multiplies the game clock by 100 and skips animation lerps
+  # (gym-sts writes its config on launch); drop it to watch at normal speed.
+  extra_mods: [AchievementEnabler, superfastmode]
 
 # Runtime files and native executables. Relative paths start at this file.
 paths:
@@ -49,12 +51,14 @@ communication:
 replay:
   action_delay_seconds: 0.5
 
-# Combat search budgets. Upstream defaults were 100000 sims / 10000 ms /
-# 30000 ms adaptive; in a measured A0 run 51% of searches hit the 10 s cap and
-# MCTS was ~80% of wall time, so the caps are lowered for pace.
+# Combat search budgets, tuned for pace at low ascension. Upstream defaults
+# were 100000 sims / 10000 ms / 30000 ms adaptive; a measured A0 run spent 80%
+# of 2 h inside MCTS with half the searches hitting the 10 s cap. Re-timed on
+# recorded states, 20000 sims / 1500 ms returns in ~1.6 s. Restore the upstream
+# numbers for high ascension.
 mcts:
-  simulations: 100000          # normal search simulation limit (per thread)
+  simulations: 20000           # normal search simulation limit (per thread)
   threads: 8                   # parallel MCTS workers (16-core box; raise to 12 when the box is idle)
-  max_time_ms: 4000            # normal search time limit
-  adaptive_time_ms: 12000      # difficult-state time limit
-  adaptive_simulations: 500000 # difficult-state simulation limit
+  max_time_ms: 1500            # normal search time limit
+  adaptive_time_ms: 4000       # difficult-state time limit
+  adaptive_simulations: 60000  # difficult-state simulation limit

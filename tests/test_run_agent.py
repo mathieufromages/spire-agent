@@ -177,7 +177,7 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertEqual(config.log_dir, ROOT)
         self.assertEqual(config.mcts_threads, 8)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
-        self.assertEqual(config.extra_mods, ("AchievementEnabler",))
+        self.assertEqual(config.extra_mods, ("AchievementEnabler", "superfastmode"))
 
     def test_extra_mods_accept_list_or_string_and_reject_garbage(self):
         with tempfile.TemporaryDirectory() as directory:
