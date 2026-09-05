@@ -228,8 +228,7 @@ class HeuristicBuildStage:
                 request, "leave", "build.shop_heuristic", "remaining offers score too low"
             )
         payload: dict[str, Any] = {"shop_heuristic": {"score": score, "price": price}, **extra}
-        local = extra.pop("shop_card_local_id", None)
-        if local is not None:
+        if payload.pop("shop_card_local_id", None) is not None:
             payload.update(
                 self._picker.shop_decision_payload(
                     policy,
@@ -240,7 +239,6 @@ class HeuristicBuildStage:
                     },
                 )
             )
-            payload.pop("shop_card_local_id", None)
         return policy_decision(
             request, command, "build.shop_heuristic", reason, targets=targets, payload=payload
         )

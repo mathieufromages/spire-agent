@@ -22,6 +22,11 @@ run:
   # Load AgentVisualizer and show the HUD. History is always recorded.
   hud: false
 
+  # Additional ModTheSpire mod ids to load from runtime/mods/<ModId>.jar.
+  # AchievementEnabler lets Steam achievements unlock while mods are loaded
+  # (needs Steam running and runtime/lib/steam_appid.txt, see run_bot.sh).
+  extra_mods: [AchievementEnabler]
+
 # Runtime files and native executables. Relative paths start at this file.
 paths:
   runtime_dir: runtime  # game lib, mods, temporary files, and bridge output
@@ -44,10 +49,12 @@ communication:
 replay:
   action_delay_seconds: 0.5
 
-# Combat search budgets.
+# Combat search budgets. Upstream defaults were 100000 sims / 10000 ms /
+# 30000 ms adaptive; in a measured A0 run 51% of searches hit the 10 s cap and
+# MCTS was ~80% of wall time, so the caps are lowered for pace.
 mcts:
-  simulations: 100000          # normal search simulation limit
-  threads: 8                   # parallel MCTS workers (16-core box, other jobs running)
-  max_time_ms: 10000           # normal search time limit
-  adaptive_time_ms: 30000      # difficult-state time limit
+  simulations: 100000          # normal search simulation limit (per thread)
+  threads: 8                   # parallel MCTS workers (16-core box; raise to 12 when the box is idle)
+  max_time_ms: 4000            # normal search time limit
+  adaptive_time_ms: 12000      # difficult-state time limit
   adaptive_simulations: 500000 # difficult-state simulation limit

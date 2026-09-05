@@ -24,4 +24,17 @@ if [[ -n "${SPIRE_NO_LLM:-}" ]]; then
   unset API_KEY MODEL_URL MODEL
 fi
 
+# Steam integration: the sandboxed game (runtime/tmp) is not launched by Steam,
+# so SteamAPI_Init() needs steam_appid.txt in its working directory. gym-sts
+# copies runtime/lib/* into the sandbox on every launch, so the file lives
+# there. With Steam running this gives "Playing Slay the Spire", rich presence
+# and (with the AchievementEnabler mod in config.yaml run.extra_mods) real
+# achievements on your account. SPIRE_STEAM=0 disables it.
+if [[ "${SPIRE_STEAM:-1}" == "0" ]]; then
+  rm -f runtime/lib/steam_appid.txt runtime/tmp/steam_appid.txt
+else
+  mkdir -p runtime/lib
+  printf '646570\n' > runtime/lib/steam_appid.txt
+fi
+
 exec uv run spire-agent "$@"

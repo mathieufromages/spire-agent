@@ -240,6 +240,15 @@ def run(
         else None
     )
 
+    base_mods = sts_constants.HUD_MODS if hud else sts_constants.REQUIRED_MODS
+    extra_mods = tuple(mod for mod in config.extra_mods if mod not in base_mods)
+    available = {path.stem.casefold() for path in mods_dir.glob("*.jar")}
+    missing = [mod for mod in extra_mods if mod.casefold() not in available]
+    if missing:
+        raise AgentConfigError(
+            f"run.extra_mods {missing!r} have no matching jar in {mods_dir}; "
+            "copy <ModId>.jar there or remove the entry"
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     env = SlayTheSpireGymEnv(
         str(lib_dir),
@@ -247,11 +256,7 @@ def run(
         str(out_dir),
         character=character,
         ascension=ascension,
-        required_mods=(
-            sts_constants.HUD_MODS
-            if hud
-            else sts_constants.REQUIRED_MODS
-        ),
+        required_mods=base_mods + extra_mods,
         communication_timeout=communication_timeout,
         fullscreen=fullscreen,
         game_dir=str(runtime_dir / "tmp"),
@@ -356,7 +361,8 @@ def run(
             f"ascension={ascension} map_agent={config.map} "
             f"build_agent={config.build} combat_agent={config.combat} "
             f"prompt_language={config.prompt_language.value} "
-            f"fullscreen={fullscreen} hud={hud}"
+            f"fullscreen={fullscreen} hud={hud} "
+            f"mods={','.join(base_mods + extra_mods)}"
         )
     try:
         game.run()

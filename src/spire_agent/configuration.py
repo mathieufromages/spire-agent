@@ -40,6 +40,7 @@ class RuntimeConfig:
     mcts_max_time_ms: int
     mcts_adaptive_time_ms: int
     mcts_adaptive_simulations: int
+    extra_mods: tuple[str, ...] = ()
 
     @property
     def requires_llm(self) -> bool:
@@ -63,7 +64,7 @@ _LLM_IMPLEMENTATIONS = {
 }
 _KEYS = {
     "agents": set(_IMPLEMENTATIONS),
-    "run": {"character", "ascension", "seed", "window_size", "hud"},
+    "run": {"character", "ascension", "seed", "window_size", "hud", "extra_mods"},
     "paths": {"runtime_dir", "log_dir", "mcts_binary", "card_eval_binary"},
     "llm": {"base_url", "model"},
     "communication": {"timeout"},
@@ -119,6 +120,14 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
     hud = run.get("hud", False)
     if not isinstance(hud, bool):
         raise AgentConfigError("run.hud must be true or false")
+    raw_mods = run.get("extra_mods") or ()
+    if isinstance(raw_mods, str):
+        raw_mods = [part for part in raw_mods.replace(",", " ").split() if part]
+    if not isinstance(raw_mods, (list, tuple)) or not all(
+        isinstance(item, str) and item.strip() for item in raw_mods
+    ):
+        raise AgentConfigError("run.extra_mods must be a list of ModTheSpire mod ids")
+    extra_mods = tuple(dict.fromkeys(item.strip() for item in raw_mods))
     timeout = groups["communication"].get("timeout", 5.0)
     if (
         isinstance(timeout, bool)
@@ -174,6 +183,7 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
         communication_timeout=float(timeout),
         replay_action_delay_seconds=float(replay_delay),
         **{f"mcts_{name}": value for name, value in mcts.items()},
+        extra_mods=extra_mods,
     )
 
 

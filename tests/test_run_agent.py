@@ -177,6 +177,23 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertEqual(config.log_dir, ROOT)
         self.assertEqual(config.mcts_threads, 8)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
+        self.assertEqual(config.extra_mods, ("AchievementEnabler",))
+
+    def test_extra_mods_accept_list_or_string_and_reject_garbage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "agents.yaml"
+            base = "agents:\n  map: heuristic\n  build: heuristic\n  combat: mcts\n"
+            path.write_text(base, encoding="utf-8")
+            self.assertEqual(load_runtime_config(path).extra_mods, ())
+            path.write_text(base + "run:\n  extra_mods: [AchievementEnabler, superfastmode]\n", encoding="utf-8")
+            self.assertEqual(
+                load_runtime_config(path).extra_mods, ("AchievementEnabler", "superfastmode")
+            )
+            path.write_text(base + "run:\n  extra_mods: AchievementEnabler\n", encoding="utf-8")
+            self.assertEqual(load_runtime_config(path).extra_mods, ("AchievementEnabler",))
+            path.write_text(base + "run:\n  extra_mods: [1]\n", encoding="utf-8")
+            with self.assertRaisesRegex(AgentConfigError, "extra_mods"):
+                load_runtime_config(path)
 
     def test_agent_config_validates_size_without_forcing_aspect_ratio(self):
         with tempfile.TemporaryDirectory() as directory:
