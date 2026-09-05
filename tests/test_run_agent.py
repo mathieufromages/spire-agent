@@ -175,7 +175,8 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertFalse(config.hud)
         self.assertEqual(config.runtime_dir, ROOT / "runtime")
         self.assertEqual(config.log_dir, ROOT)
-        self.assertEqual(config.mcts_threads, 8)
+        self.assertEqual(config.mcts_threads, 12)
+        self.assertEqual(config.mcts_hallway_max_time_ms, 5000)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
         self.assertEqual(config.extra_mods, ("AchievementEnabler", "superfastmode"))
 

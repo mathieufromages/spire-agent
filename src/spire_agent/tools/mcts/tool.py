@@ -152,6 +152,7 @@ class CombatMCTS:
         max_time_ms: int = 10_000,
         adaptive_time_ms: int = 30_000,
         adaptive_simulations: int = 500_000,
+        hallway_max_time_ms: int = 0,
     ) -> None:
         self.binary = Path(binary).resolve()
         self.runs = run_directory
@@ -160,8 +161,15 @@ class CombatMCTS:
         self.max_time_ms = max_time_ms
         self.adaptive_time_ms = adaptive_time_ms
         self.adaptive_simulations = adaptive_simulations
+        # Optional shorter wall-clock cap for ordinary Act 1-2 hallway fights
+        # at healthy HP. 0 keeps the full budget everywhere. The simulation
+        # budget is unchanged, so only searches that would have run to the
+        # time cap are shortened.
+        self.hallway_max_time_ms = int(hallway_max_time_ms or 0)
         if min(simulations, threads, max_time_ms, adaptive_time_ms, adaptive_simulations) <= 0:
             raise ValueError("MCTS limits must be positive")
+        if self.hallway_max_time_ms < 0:
+            raise ValueError("hallway_max_time_ms must be non-negative")
 
     def choose(
         self,
@@ -303,7 +311,26 @@ class CombatMCTS:
         }
         if ids & {"SpireShield", "SpireSpear", "CorruptHeart"}:
             return self.adaptive_simulations, self.adaptive_time_ms
+        if self._is_easy_hallway(state):
+            return self.simulations, min(self.max_time_ms, self.hallway_max_time_ms)
         return self.simulations, self.max_time_ms
+
+    def _is_easy_hallway(self, state: GameState) -> bool:
+        """Plain MonsterRoom in Act 1-2 with the player at >= 50% HP."""
+
+        if self.hallway_max_time_ms <= 0:
+            return False
+        facts = state.facts
+        room = str(facts.get("room_type") or "").casefold()
+        if room != "monsterroom":
+            return False
+        try:
+            act = int(facts.get("act") or 0)
+            current = int(facts.get("current_hp") or 0)
+            maximum = int(facts.get("max_hp") or 0)
+        except (TypeError, ValueError):
+            return False
+        return act in {1, 2} and maximum > 0 and current * 2 >= maximum
 
     def _binary_info(self) -> dict[str, object]:
         try:

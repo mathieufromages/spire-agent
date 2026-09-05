@@ -41,6 +41,7 @@ class RuntimeConfig:
     mcts_adaptive_time_ms: int
     mcts_adaptive_simulations: int
     extra_mods: tuple[str, ...] = ()
+    mcts_hallway_max_time_ms: int = 0
 
     @property
     def requires_llm(self) -> bool:
@@ -75,6 +76,7 @@ _KEYS = {
         "max_time_ms",
         "adaptive_time_ms",
         "adaptive_simulations",
+        "hallway_max_time_ms",
     },
 }
 
@@ -156,6 +158,7 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
     }
     if not all(mcts.values()):
         raise AgentConfigError("mcts values must be positive")
+    hallway_ms = _integer(groups["mcts"], "hallway_max_time_ms", 0)
 
     root = path.resolve().parent
     llm = groups["llm"]
@@ -184,6 +187,7 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
         replay_action_delay_seconds=float(replay_delay),
         **{f"mcts_{name}": value for name, value in mcts.items()},
         extra_mods=extra_mods,
+        mcts_hallway_max_time_ms=hallway_ms,
     )
 
 

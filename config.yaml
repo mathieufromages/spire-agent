@@ -57,7 +57,11 @@ replay:
 # max_time_ms/simulations speeds runs up at the cost of play quality.
 mcts:
   simulations: 100000          # normal search simulation limit (per thread)
-  threads: 8                   # parallel MCTS workers (16-core box; raise to 12-14 when the box is idle)
+  threads: 12                  # parallel MCTS workers (16-core box; 8 while another heavy job runs)
   max_time_ms: 10000           # normal search time limit
   adaptive_time_ms: 30000      # difficult-state time limit
   adaptive_simulations: 500000 # difficult-state simulation limit
+  # Shorter wall-clock cap for plain Act 1-2 hallway fights (room_type
+  # MonsterRoom) while the player is at >= 50% HP. Elites, bosses, Act 3+, and
+  # low-HP fights keep max_time_ms. 0 disables the tier.
+  hallway_max_time_ms: 5000

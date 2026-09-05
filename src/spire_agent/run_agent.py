@@ -233,6 +233,7 @@ def run(
                 max_time_ms=config.mcts_max_time_ms,
                 adaptive_time_ms=config.mcts_adaptive_time_ms,
                 adaptive_simulations=config.mcts_adaptive_simulations,
+                hallway_max_time_ms=config.mcts_hallway_max_time_ms,
             ),
             PotionGate(run_directory),
         )
