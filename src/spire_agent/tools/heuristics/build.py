@@ -86,6 +86,9 @@ class HeuristicBuildStage:
         commands = set(state.screen.commands)
         direct = result.get("command")
         if isinstance(direct, str) and direct:
+            core = self._core_override(request, result, direct)
+            if core is not None:
+                return core
             veto = self._pick_veto(state, direct) if "skip" in commands else None
             if veto is None:
                 return policy_decision(
@@ -144,6 +147,9 @@ class HeuristicBuildStage:
             command, reason = "skip", "no legal shortlisted card"
         else:
             command, reason = "choose 0", "forced pick without a shortlist"
+        core = self._core_override(request, result, command)
+        if core is not None:
+            return core
         proposal = {
             "action": command.split()[0],
             "choice_id": int(command.split()[1]) if command.startswith("choose ") else None,
@@ -225,6 +231,9 @@ class HeuristicBuildStage:
             score = 0.8 + 0.12 * _candidate_score(candidates.get(local, {}))
             if direct == f"choose {local}":
                 score += 1.0
+            core = card_values.core_preference(deck, [row.get("name")], None, act)
+            if core is not None:
+                score += 1.0  # a missing Heart core is worth buying on its own
             options.append(
                 (
                     score,
@@ -472,6 +481,49 @@ class HeuristicBuildStage:
         )
 
     # -- helpers ----------------------------------------------------------
+
+    def _core_override(self, request: DecisionRequest, result: Mapping[str, Any], command: str) -> Decision | None:
+        """Take a missing Heart core over the picker's non-core pick or skip."""
+
+        state = request.state
+        if str(result.get("policy") or "") == "BLOCKING_SURVIVAL":
+            return None
+        names = self._offered_names(state)
+        if not names:
+            return None
+        current = None
+        parts = command.split()
+        if len(parts) == 2 and parts[0] == "choose" and parts[1].isdigit():
+            index = int(parts[1])
+            if index >= len(names):
+                return None  # Singing Bowl or another non-card choice
+            current = names[index]
+        found = card_values.core_preference(
+            state.facts.get("deck"), names, current, state.facts.get("act")
+        )
+        if found is None:
+            return None
+        index, reason = found
+        if current is not None and index == int(parts[1]):
+            return None
+        new_command = f"choose {index}"
+        return policy_decision(
+            request,
+            new_command,
+            "card_reward.core_override",
+            f"{reason} (picker: {command})",
+            payload={
+                **self._picker.decision_payload(result, command=new_command),
+                "core_override": {"overridden": command, "reason": reason},
+            },
+        )
+
+    @staticmethod
+    def _offered_names(state: GameState) -> list[str]:
+        cards = _sequence(state.screen.details.get("cards"))
+        if cards:
+            return [_label(card) for card in cards]
+        return [_label(choice) for choice in state.screen.choices]
 
     @staticmethod
     def _pick_veto(state: GameState, command: str) -> str | None:

@@ -419,6 +419,56 @@ class DeckGuardTests(unittest.TestCase):
         self.assertEqual(build_agent().decide(request(state)).command, "choose 1")
 
 
+class CoreOverrideTests(unittest.TestCase):
+    def _decide(self, command, choices, *, deck, act=2, policy="EXPERT_EXPERIENCE"):
+        picker = FakePicker(
+            {
+                "owner": "CardRewardPolicy", "mode": "DIRECT", "policy": policy,
+                "command": command, "reason": policy, "allowed_choice_ids": [], "allow_skip": True,
+                "bowl_choice_id": None, "candidates": [], "winning_path": {},
+            }
+        )
+        state = build_state(
+            "CARD_REWARD", commands=("choose", "skip"), choices=choices,
+            details={"cards": [{"name": c.title()} for c in choices]},
+            facts={"deck": deck, "act": act},
+        )
+        return create_heuristic_build_agent(picker).decide(request(state))
+
+    DECK = [{"name": "Strike", "count": 4}, {"name": "Defend", "count": 4}, {"name": "Inflame", "count": 2}]
+
+    def test_missing_scaling_core_beats_a_skip(self):
+        decision = self._decide("skip", ("thunderclap", "demon form", "evolve"), deck=self.DECK, act=3)
+        self.assertEqual((decision.command, decision.source), ("choose 1", "card_reward.core_override"))
+
+    def test_missing_scaling_core_beats_a_filler_pick(self):
+        decision = self._decide("choose 0", ("body slam", "reckless charge", "feel no pain"), deck=self.DECK, act=3)
+        self.assertEqual(decision.command, "choose 2")
+
+    def test_core_versus_core_is_left_to_the_picker(self):
+        decision = self._decide("choose 0", ("corruption", "demon form"), deck=self.DECK, act=2)
+        self.assertEqual((decision.command, decision.source), ("choose 0", "card_reward.policy"))
+
+    def test_owned_core_is_not_taken_again(self):
+        deck = self.DECK + [{"name": "Corruption", "count": 1}]
+        decision = self._decide("skip", ("corruption", "anger"), deck=deck, act=2)
+        self.assertEqual(decision.command, "skip")
+
+    def test_finisher_is_taken_from_act_two_when_none_owned(self):
+        self.assertEqual(self._decide("skip", ("immolate", "anger"), deck=self.DECK, act=2).command, "choose 0")
+        self.assertEqual(self._decide("skip", ("immolate", "anger"), deck=self.DECK, act=1).command, "skip")
+
+    def test_blocking_survival_pick_is_respected(self):
+        decision = self._decide("choose 0", ("shrug it off", "demon form"), deck=self.DECK, policy="BLOCKING_SURVIVAL")
+        self.assertEqual(decision.command, "choose 0")
+
+    def test_neow_does_not_sell_max_hp_for_gold(self):
+        from spire_agent.tools.heuristics.events import EventContext, neow_option_score
+        ctx = EventContext(labels=(), texts=(), hp=80, max_hp=80, gold=99, act=1, floor=0, ascension=0,
+                           relics=frozenset(), deck_size=10, basics=9, curses=0, empty_potion_slots=3)
+        self.assertLess(neow_option_score("lose 8 max hp gain 250 gold", ctx), neow_option_score("max hp +8", ctx))
+
+
 class FakeCombatSearch:
     def choose(self, state):
         return MCTSResult(command="end", follow_up=None, metrics={"search_id": "test"})

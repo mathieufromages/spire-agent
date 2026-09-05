@@ -132,12 +132,14 @@ def neow_option_score(text: str, ctx: EventContext) -> float:
             score = max(score, value)
     costs = (
         ("lose all gold", 3.5), ("lose all your gold", 3.5), ("obtain a curse", 4.0),
-        ("take damage", 2.0), ("max hp -", 3.0), ("lose your starting relic", 9.0),
+        ("take damage", 2.0), ("max hp -", 5.5), ("lose your starting relic", 9.0),
         ("no gold", 3.5),
     )
     for marker, value in costs:
         if marker in text:
             score -= value
+    if re.search(r"lose \d+ max hp", text):
+        score -= 5.5  # the live label is "lose 8 max hp gain 250 gold"
     if "boss relic" in text:
         score -= 2.0
     return score

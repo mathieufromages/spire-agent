@@ -83,6 +83,20 @@ _SINGLE_COPY_POWERS = frozenset({
 _STACKING_POWERS = frozenset({"demon form", "inflame", "feel no pain", "defragment", "biased cognition"})
 _MAX_COPIES = 3
 
+# Heart-relevant cores (2026-09-05, 8 Act 4 decks): every Heart kill had a
+# scaling core plus a finisher; both decks with neither died.  Tier S cards
+# are taken over any non-core pick when not yet owned; tier A finishers are
+# taken from act 2 on when the deck has none.
+HEART_SCALING = frozenset({
+    "limit break", "demon form", "corruption", "feel no pain", "dark embrace",
+    "barricade", "apotheosis",
+})
+HEART_FINISHERS = frozenset({
+    "reaper", "fiend fire", "immolate", "whirlwind", "bludgeon", "offering",
+    "shockwave", "disarm",
+})
+_TRUE_FINISHERS = frozenset({"reaper", "fiend fire", "immolate", "whirlwind", "bludgeon"})
+
 # Soft deck-size caps per act (physical cards, curses included).  Above the cap
 # only cards at or above the paired pick value are worth a slot; above the hard
 # cap only top-tier cards are.
@@ -189,6 +203,43 @@ def pick_veto(deck: object, name: object, act: object = 1) -> str | None:
     return None
 
 
+def core_preference(deck: object, offered: Sequence[object], current: object, act: object = 1) -> tuple[int, str] | None:
+    """Return (index, reason) of an offered Heart-core card that should replace
+    ``current`` (the picker's choice name, or None for skip), else None."""
+
+    rows = deck_rows(deck)
+    owned = {normalize(row["name"]) for row in rows}
+    cur = normalize(base_name(current)) if current else ""
+    if cur in HEART_SCALING or cur in HEART_FINISHERS:
+        return None
+    cur_value = pick_value(current) if current else 0.0
+    has_finisher = bool(owned & _TRUE_FINISHERS)
+    best: tuple[float, int, str] | None = None
+    for index, name in enumerate(offered):
+        key = normalize(base_name(name))
+        if pick_veto(deck, name, act) is not None:
+            continue
+        if key in HEART_SCALING and key not in owned:
+            reason = f"{base_name(name)} is a missing scaling core"
+            score = pick_value(name) + 100.0
+        elif (
+            key in HEART_FINISHERS
+            and key not in owned
+            and _int(act) >= 2
+            and (not has_finisher or key in _TRUE_FINISHERS and pick_value(name) >= cur_value + 10)
+            and pick_value(name) >= cur_value + 4
+        ):
+            reason = f"{base_name(name)} is a finisher the deck lacks" if not has_finisher else f"{base_name(name)} outranks {base_name(current)}"
+            score = pick_value(name)
+        else:
+            continue
+        if best is None or score > best[0]:
+            best = (score, index, reason)
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
 def deck_rows(deck: object) -> list[dict[str, object]]:
     """Return one row per physical deck card with name/upgraded/type flags."""
 
@@ -273,9 +324,12 @@ def _int(value: object) -> int:
 
 
 __all__ = [
+    "HEART_FINISHERS",
+    "HEART_SCALING",
     "UNREMOVABLE",
     "base_name",
     "card_facts",
+    "core_preference",
     "deck_rows",
     "has_removal_target",
     "is_curse",
