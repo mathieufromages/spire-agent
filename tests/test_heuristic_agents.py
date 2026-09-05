@@ -361,6 +361,64 @@ class HeuristicCardRewardTests(unittest.TestCase):
         self.assertEqual(decision.payload["card_reward_policy_result"]["card"], "Shrug It Off")
 
 
+class DeckGuardTests(unittest.TestCase):
+    def _direct(self, choice, choices, *, deck, act=1, bowl=None):
+        picker = FakePicker(
+            {
+                "owner": "CardRewardPolicy", "mode": "DIRECT", "policy": "TEMPLATE_PROGRESS",
+                "command": f"choose {choice}", "reason": "TEMPLATE_PROGRESS",
+                "allowed_choice_ids": [choice], "allow_skip": False, "bowl_choice_id": bowl,
+                "candidates": [], "winning_path": {},
+            }
+        )
+        state = build_state(
+            "CARD_REWARD", commands=("choose", "skip"), choices=choices,
+            details={"cards": [{"name": c.title()} for c in choices]},
+            facts={"deck": deck, "act": act},
+        )
+        return create_heuristic_build_agent(picker).decide(request(state))
+
+    def test_second_copy_of_a_single_copy_power_is_skipped(self):
+        deck = [{"name": "Strike", "count": 5}, {"name": "Dark Embrace", "count": 1, "upgrades": 1}]
+        decision = self._direct(0, ("dark embrace", "anger"), deck=deck)
+        self.assertEqual((decision.command, decision.source), ("skip", "card_reward.deck_guard"))
+        self.assertIn("power limit 1", decision.reason)
+
+    def test_stacking_power_is_still_taken(self):
+        deck = [{"name": "Strike", "count": 5}, {"name": "Demon Form", "count": 2}]
+        decision = self._direct(0, ("demon form", "anger"), deck=deck, act=3)
+        self.assertEqual(decision.command, "choose 0")
+
+    def test_late_filler_is_skipped_but_scaling_is_taken(self):
+        deck = [{"name": "Strike", "count": 5}, {"name": "Defend", "count": 4}, {"name": "Bash", "count": 1}] + [
+            {"name": name, "count": 1}
+            for name in (
+                "Shrug It Off", "Whirlwind", "Headbutt", "Uppercut", "Body Slam", "Feed", "Disarm",
+                "Impervious", "Offering", "Metallicize", "Flame Barrier", "True Grit", "Rampage",
+                "Blind", "Madness", "Corruption",
+            )
+        ]
+        self.assertEqual(self._direct(0, ("anger", "inflame"), deck=deck, act=3).command, "skip")
+        self.assertEqual(self._direct(1, ("anger", "inflame"), deck=deck, act=3).command, "choose 1")
+
+    def test_singing_bowl_replaces_a_vetoed_pick(self):
+        deck = [{"name": "Strike", "count": 5}, {"name": "Corruption", "count": 1}]
+        decision = self._direct(0, ("corruption", "anger", "bowl"), deck=deck, bowl=2)
+        self.assertEqual(decision.command, "choose 2")
+
+    def test_boss_relics_avoid_fusion_hammer_and_cursed_key(self):
+        state = build_state(
+            "BOSS_REWARD", commands=("choose", "skip"),
+            choices=("Fusion Hammer", "Cursed Key", "Black Blood"),
+        )
+        decision = build_agent().decide(request(state))
+        self.assertEqual(decision.command, "choose 2")
+        state = build_state(
+            "BOSS_REWARD", commands=("choose", "skip"), choices=("Fusion Hammer", "Cursed Key", "Sozu")
+        )
+        self.assertEqual(build_agent().decide(request(state)).command, "choose 1")
+
+
 class FakeCombatSearch:
     def choose(self, state):
         return MCTSResult(command="end", follow_up=None, metrics={"search_id": "test"})

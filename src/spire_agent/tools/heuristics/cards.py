@@ -24,6 +24,13 @@ _UPGRADE_PRIORITY = {
     "ghostly armor": 68, "true grit": 68, "iron wave": 66, "twin strike": 64,
     "cleave": 64, "clothesline": 64, "sword boomerang": 62, "perfected strike": 62,
     "heavy blade": 62, "anger": 60, "thunderclap": 60, "wild strike": 55,
+    "juggernaut": 82, "berserk": 80, "double tap": 76, "feed": 72, "entrench": 72,
+    "exhume": 70, "spot weakness": 66, "seeing red": 66, "blood for blood": 66,
+    "burning pact": 62, "hemokinesis": 62, "rage": 62, "evolve": 62, "rampage": 60,
+    "bloodletting": 60, "combust": 60, "sever soul": 60, "dual wield": 60,
+    "dropkick": 58, "fire breathing": 58, "rupture": 55, "searing blow": 50,
+    "sentinel": 50, "infernal blade": 45, "flex": 45, "intimidate": 40, "blind": 40,
+    "warcry": 40, "reckless charge": 40, "havoc": 30, "clash": 30,
     "bash": 40,
     # Defect
     "echo form": 96, "defragment": 92, "glacier": 90, "coolheaded": 88,
@@ -53,6 +60,34 @@ _REMOVAL_PRIORITY = {
 }
 
 _STARTER_NAMES = frozenset({"strike", "defend", "bash", "zap", "dualcast"})
+
+# Cards whose value as a *new pick* differs from their upgrade priority: cheap
+# damage that is fine to upgrade when already owned but not worth a deck slot
+# once the deck has its attacks.
+_PICK_VALUE = {
+    "bash": 20, "wild strike": 45, "anger": 50, "perfected strike": 50,
+    "sword boomerang": 52, "thunderclap": 55, "twin strike": 56, "headbutt": 58,
+    "clothesline": 58, "true grit": 60, "cleave": 60, "iron wave": 60,
+    "body slam": 62, "pommel strike": 72,
+    "zap": 20, "dualcast": 20,
+}
+
+# Powers whose second copy is (nearly) dead.  Every other power may be picked
+# twice; no card may be picked more than three times.
+_SINGLE_COPY_POWERS = frozenset({
+    "barricade", "corruption", "juggernaut", "evolve", "fire breathing",
+    "combust", "rupture", "berserk", "brutality", "dark embrace", "metallicize",
+    "echo form", "creative ai", "machine learning", "static discharge", "storm",
+    "heatsinks", "electrodynamics", "buffer", "loop", "capacitor",
+})
+_STACKING_POWERS = frozenset({"demon form", "inflame", "feel no pain", "defragment", "biased cognition"})
+_MAX_COPIES = 3
+
+# Soft deck-size caps per act (physical cards, curses included).  Above the cap
+# only cards at or above the paired pick value are worth a slot; above the hard
+# cap only top-tier cards are.
+_DECK_CAPS = {1: (18, 60.0), 2: (22, 62.0), 3: (25, 66.0), 4: (26, 70.0)}
+_HARD_CAP = (30, 76.0)
 
 
 def normalize(name: object) -> str:
@@ -114,9 +149,44 @@ def removal_value(name: object) -> float:
 
 
 def pick_value(name: object) -> float:
-    """Rough desirability of adding ``name`` (used for unplanned pick grids)."""
+    """Rough desirability of adding ``name`` to the deck."""
 
+    key = normalize(base_name(name))
+    if key in _PICK_VALUE:
+        return float(_PICK_VALUE[key])
     return upgrade_value(name)
+
+
+def pick_veto(deck: object, name: object, act: object = 1) -> str | None:
+    """Return why ``name`` should not join ``deck`` now, or None if it may.
+
+    Applied on top of the Winning Path picker: it stops duplicate powers,
+    fourth copies and late-run filler that bloat the deck (2026-09-05: the
+    Heart losses carried 30-33 cards with few upgrades and no scaling).
+    """
+
+    key = normalize(base_name(name))
+    if not key:
+        return None
+    facts = card_facts(name)
+    kind = normalize(facts["type"])
+    rows = deck_rows(deck)
+    copies = sum(1 for row in rows if normalize(row["name"]) == key)
+    if kind == "power" and key not in _STACKING_POWERS:
+        limit = 1 if key in _SINGLE_COPY_POWERS else 2
+        if copies >= limit:
+            return f"already own {copies} {base_name(name)} (power limit {limit})"
+    if copies >= _MAX_COPIES:
+        return f"already own {copies} copies of {base_name(name)}"
+    value = pick_value(name)
+    size = len(rows)
+    hard_size, hard_value = _HARD_CAP
+    if size >= hard_size and value < hard_value:
+        return f"deck has {size} cards; {base_name(name)} ({value:.0f}) is below the hard cap {hard_value:.0f}"
+    cap_size, cap_value = _DECK_CAPS.get(max(1, min(4, _int(act))), _DECK_CAPS[4])
+    if size >= cap_size and value < cap_value:
+        return f"deck has {size} cards in act {_int(act)}; {base_name(name)} ({value:.0f}) is filler"
+    return None
 
 
 def deck_rows(deck: object) -> list[dict[str, object]]:
@@ -212,6 +282,7 @@ __all__ = [
     "is_starter",
     "normalize",
     "pick_value",
+    "pick_veto",
     "removal_targets",
     "removal_value",
     "upgrade_targets",

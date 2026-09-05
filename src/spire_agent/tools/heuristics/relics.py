@@ -8,35 +8,40 @@ import re
 # Boss relic scores; higher is better.  Runic Dome hides intents, which the
 # MCTS combat agent depends on, so it is effectively never taken.
 _BOSS_RELICS = {
-    "coffee dripper": 8.6,
-    "cursed key": 8.2,
-    "black blood": 8.0,
+    "black blood": 8.2,
     "frozen core": 7.8,
     "nuclear battery": 7.8,
+    "coffee dripper": 7.6,
     "empty cage": 7.6,
-    "astrolabe": 7.4,
+    "astrolabe": 7.2,
     "runic pyramid": 7.0,
-    "philosopher's stone": 6.8,
-    "fusion hammer": 6.6,
-    "slaver's collar": 6.6,
-    "sozu": 6.4,
+    "slaver's collar": 6.8,
+    "philosopher's stone": 6.4,
     "inserter": 6.2,
-    "busted crown": 6.0,
-    "ectoplasm": 5.6,
-    "velvet choker": 5.4,
+    "sacred bark": 5.6,
     "pandora's box": 5.2,
-    "sacred bark": 5.0,
     "black star": 5.0,
-    "snecko eye": 4.0,
-    "mark of pain": 4.0,
-    "runic cube": 3.8,
-    "calling bell": 3.0,
-    "tiny house": 3.0,
     "hovering kite": 5.0,
     "wrist blade": 5.0,
     "ring of the serpent": 5.0,
     "holy water": 5.0,
     "violet lotus": 5.0,
+    # The bot opens every chest and takes most rewards, so Cursed Key fills the
+    # deck with curses that removals then have to spend themselves on.
+    "cursed key": 4.8,
+    "busted crown": 4.6,
+    # The combat agent uses potions; Sozu throws that away.
+    "sozu": 4.4,
+    "mark of pain": 4.0,
+    "snecko eye": 3.8,
+    "velvet choker": 3.6,
+    "runic cube": 3.6,
+    "ectoplasm": 3.2,
+    "calling bell": 3.0,
+    "tiny house": 3.0,
+    # Smithing is the bot's only reliable upgrade path (2026-09-05: the two
+    # Fusion Hammer runs reached the Heart with 4-5 upgrades and died).
+    "fusion hammer": 1.5,
     "runic dome": 0.0,
 }
 

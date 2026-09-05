@@ -82,17 +82,35 @@ class HeuristicBuildStage:
 
     def _card_reward(self, request: DecisionRequest) -> Decision:
         result = self._picker.review(request)
-        direct = result.get("command")
-        if isinstance(direct, str) and direct:
-            return policy_decision(
-                request,
-                direct,
-                "card_reward.policy",
-                str(result.get("reason") or "card picker direct decision"),
-                payload=self._picker.decision_payload(result, command=direct),
-            )
         state = request.state
         commands = set(state.screen.commands)
+        direct = result.get("command")
+        if isinstance(direct, str) and direct:
+            veto = self._pick_veto(state, direct) if "skip" in commands else None
+            if veto is None:
+                return policy_decision(
+                    request,
+                    direct,
+                    "card_reward.policy",
+                    str(result.get("reason") or "card picker direct decision"),
+                    payload=self._picker.decision_payload(result, command=direct),
+                )
+            bowl = result.get("bowl_choice_id")
+            command = (
+                f"choose {bowl}"
+                if isinstance(bowl, int) and 0 <= bowl < len(state.screen.choices)
+                else "skip"
+            )
+            return policy_decision(
+                request,
+                command,
+                "card_reward.deck_guard",
+                f"deck guard overrides {direct}: {veto}",
+                payload={
+                    **self._picker.decision_payload(result, command=command),
+                    "deck_guard": {"overridden": direct, "reason": veto},
+                },
+            )
         allowed = [int(value) for value in result.get("allowed_choice_ids") or ()]
         candidates = {
             int(row["choice_id"]): row
@@ -100,14 +118,24 @@ class HeuristicBuildStage:
             if isinstance(row, Mapping) and "choice_id" in row
         }
         allowed = [cid for cid in allowed if cid < len(state.screen.choices)]
+        vetoed = {
+            cid: reason
+            for cid in allowed
+            if "skip" in commands and (reason := self._pick_veto(state, f"choose {cid}")) is not None
+        }
+        allowed = [cid for cid in allowed if cid not in vetoed]
         ranked = sorted(allowed, key=lambda cid: (-_candidate_score(candidates.get(cid, {})), cid))
-        allow_skip = bool(result.get("allow_skip")) and "skip" in commands
+        allow_skip = (bool(result.get("allow_skip")) or bool(vetoed)) and "skip" in commands
         bowl = result.get("bowl_choice_id")
         if ranked and (not allow_skip or _candidate_score(candidates.get(ranked[0], {})) > 0):
             command = f"choose {ranked[0]}"
             reason = f"best shortlisted card {candidates.get(ranked[0], {}).get('name', ranked[0])}"
         elif allow_skip:
-            command, reason = "skip", "no shortlisted card scores positively"
+            command, reason = "skip", (
+                "no shortlisted card scores positively"
+                if not vetoed or ranked
+                else "deck guard: " + "; ".join(vetoed.values())
+            )
         elif isinstance(bowl, int) and 0 <= bowl < len(state.screen.choices):
             command, reason = f"choose {bowl}", "Singing Bowl instead of an unwanted card"
         elif ranked:
@@ -182,13 +210,19 @@ class HeuristicBuildStage:
             for row in result.get("candidates") or ()
             if isinstance(row, Mapping) and "choice_id" in row
         }
+        act = _int(state.facts.get("act"))
         for local, row in enumerate(policy.get("card_choices") or ()):
             if not isinstance(row, Mapping):
                 continue
             cid, price = int(row["choice_id"]), float(row.get("price") or 0)
             if cid not in allowed or price > gold:
                 continue
-            score = 1.2 + 0.12 * _candidate_score(candidates.get(local, {}))
+            if card_values.pick_veto(deck, row.get("name"), act) is not None:
+                continue
+            # An "allowed" card with no positive evidence scores below the
+            # leave threshold (1.0): shops used to buy every approved card
+            # (10 in one run) and bloat the deck.
+            score = 0.8 + 0.12 * _candidate_score(candidates.get(local, {}))
             if direct == f"choose {local}":
                 score += 1.0
             options.append(
@@ -438,6 +472,20 @@ class HeuristicBuildStage:
         )
 
     # -- helpers ----------------------------------------------------------
+
+    @staticmethod
+    def _pick_veto(state: GameState, command: str) -> str | None:
+        """Deck-guard reason for a ``choose N`` card reward command, else None."""
+
+        parts = command.split()
+        if len(parts) != 2 or parts[0] != "choose" or not parts[1].isdigit():
+            return None
+        index = int(parts[1])
+        if index >= len(state.screen.choices):
+            return None
+        cards = _sequence(state.screen.details.get("cards"))
+        name = _label(cards[index]) if index < len(cards) else _label(state.screen.choices[index])
+        return card_values.pick_veto(state.facts.get("deck"), name, state.facts.get("act"))
 
     def _generic(self, request: DecisionRequest) -> Decision:
         state = request.state
