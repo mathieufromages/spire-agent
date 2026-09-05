@@ -57,7 +57,7 @@ replay:
 # max_time_ms/simulations speeds runs up at the cost of play quality.
 mcts:
   simulations: 100000          # normal search simulation limit (per thread)
-  threads: 12                  # parallel MCTS workers (16-core box; 8 while another heavy job runs)
+  threads: 8                   # parallel MCTS workers (16-core box; 8 while the STS2 PPO job runs, 12 when idle)
   max_time_ms: 10000           # normal search time limit
   adaptive_time_ms: 30000      # difficult-state time limit
   adaptive_simulations: 500000 # difficult-state simulation limit
