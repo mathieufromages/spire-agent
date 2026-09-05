@@ -14,9 +14,13 @@ _BOSS_RELICS = {
     "coffee dripper": 7.6,
     "empty cage": 7.6,
     "astrolabe": 7.2,
-    "runic pyramid": 7.0,
+    # Runic Pyramid retains the Heart's Wounds/Dazed forever (run 10: Reaper+
+    # sat behind three Wounds for four turns); Philosopher's Stone adds +1 per
+    # hit to the Heart's 12-hit attack.  Both are fine in Acts 1-3, but the
+    # goal is the Heart.
+    "runic pyramid": 4.9,
     "slaver's collar": 6.8,
-    "philosopher's stone": 6.4,
+    "philosopher's stone": 4.7,
     "inserter": 6.2,
     "sacred bark": 5.6,
     "pandora's box": 5.2,
@@ -78,6 +82,25 @@ _SHOP_RELICS = {
 }
 
 
+# Shop potions: purchase score before the act bonus.  Anything unlisted is 1.1.
+_SHOP_POTIONS = {
+    "fairy in a bottle": 1.9, "fruit juice": 1.9, "entropic brew": 1.6,
+    "heart of iron": 1.6, "ancient potion": 1.5, "duplication potion": 1.5,
+    "cultist potion": 1.5, "strength potion": 1.5, "power potion": 1.5,
+    "ghost in a jar": 1.5, "focus potion": 1.5, "block potion": 1.4,
+    "fear potion": 1.4, "speed potion": 1.4, "regen potion": 1.4,
+    "attack potion": 1.4, "blessing of the forge": 1.4, "essence of steel": 1.4,
+    "blood potion": 1.4, "energy potion": 1.4, "weak potion": 1.3,
+    "swift potion": 1.3, "fire potion": 1.3, "skill potion": 1.3,
+    "liquid bronze": 1.3, "dexterity potion": 1.3, "flex potion": 1.2,
+    "explosive potion": 1.2, "distilled chaos": 1.2, "gambler's brew": 1.2,
+    "liquid memories": 1.2, "colorless potion": 1.2, "elixir": 1.0,
+    "snecko oil": 1.0, "smoke bomb": 0.9, "poison potion": 1.3,
+    "cunning potion": 1.2, "bottled miracle": 1.2, "stance potion": 1.0,
+    "ambrosia": 1.2, "potion of capacity": 1.3, "essence of darkness": 1.3,
+}
+
+
 def normalize(name: object) -> str:
     return re.sub(r"\s+", " ", str(name or "").strip().casefold())
 
@@ -98,4 +121,15 @@ def shop_relic_value(name: object, price: float) -> float | None:
     return 1.0 + min(max(price, 0.0), 300.0) / 300.0 * 0.5
 
 
-__all__ = ["boss_relic_value", "shop_relic_value"]
+def shop_potion_value(name: object, act: object = 1) -> float:
+    """Purchase score for a shop potion; Acts 3-4 pay extra for the Heart."""
+
+    value = _SHOP_POTIONS.get(normalize(name), 1.1)
+    try:
+        late = int(act) >= 3
+    except (TypeError, ValueError):
+        late = False
+    return value + (0.4 if late else 0.0)
+
+
+__all__ = ["boss_relic_value", "shop_potion_value", "shop_relic_value"]

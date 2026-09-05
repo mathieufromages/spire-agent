@@ -469,6 +469,36 @@ class CoreOverrideTests(unittest.TestCase):
         self.assertLess(neow_option_score("lose 8 max hp gain 250 gold", ctx), neow_option_score("max hp +8", ctx))
 
 
+class ShopPotionTests(unittest.TestCase):
+    def _shop(self, *, potions, act=4, gold=300):
+        state = build_state(
+            "SHOP_SCREEN", commands=("choose", "leave"),
+            choices=("purge", "fear potion", "nunchaku"),
+            details={
+                "cards": [], "purge_cost": 500, "purge_available": True,
+                "relics": [{"name": "Nunchaku", "price": 400}],
+                "potions": [{"name": "Fear Potion", "price": 51}],
+            },
+            facts={"act": act, "gold": gold, "potions": potions},
+        )
+        return build_agent().decide(request(state))
+
+    def test_empty_slot_buys_a_potion_late(self):
+        decision = self._shop(potions=[None, None, None])
+        self.assertEqual((decision.command, decision.reason), ("choose 1", "buy potion Fear Potion"))
+
+    def test_full_slots_leave(self):
+        decision = self._shop(potions=[{"name": "Block Potion"}, {"name": "Fire Potion"}])
+        self.assertEqual(decision.command, "leave")
+
+    def test_boss_relics_prefer_pandoras_box_to_philosophers_stone(self):
+        state = build_state(
+            "BOSS_REWARD", commands=("choose", "skip"),
+            choices=("philosopher's stone", "tiny house", "pandora's box"),
+        )
+        self.assertEqual(build_agent().decide(request(state)).command, "choose 2")
+
+
 class FakeCombatSearch:
     def choose(self, state):
         return MCTSResult(command="end", follow_up=None, metrics={"search_id": "test"})

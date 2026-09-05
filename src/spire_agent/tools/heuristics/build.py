@@ -35,7 +35,7 @@ from spire_agent.tools.winning_path.card_policy import CardRewardError
 
 from . import cards as card_values
 from .events import EventContext, event_key, normalize as normalize_event, rank_choices
-from .relics import boss_relic_value, shop_relic_value
+from .relics import boss_relic_value, shop_potion_value, shop_relic_value
 
 
 _NO_HEAL_RELICS = frozenset({"coffee dripper", "mark of the bloom"})
@@ -258,6 +258,21 @@ class HeuristicBuildStage:
             if value is None:
                 continue
             options.append((value, price, f"choose {cid}", f"buy relic {name}", (), {}))
+
+        # Potions: run 10 reached the Heart with one potion after leaving an
+        # Act 4 shop with 732 gold, three empty slots and three potions unbought.
+        if _empty_potion_slots(state.facts.get("potions")) > 0:
+            for potion in _sequence(details.get("potions")):
+                if not isinstance(potion, Mapping):
+                    continue
+                name = str(potion.get("name") or potion.get("id") or "")
+                price = float(potion.get("price") or 0)
+                cid = next((i for i, label in enumerate(labels) if label == normalize_event(name)), None)
+                if cid is None or price <= 0 or price > gold:
+                    continue
+                options.append(
+                    (shop_potion_value(name, act), price, f"choose {cid}", f"buy potion {name}", (), {})
+                )
 
         if not options:
             return policy_decision(
@@ -647,12 +662,7 @@ def _event_context(state: GameState, labels: tuple[str, ...], texts: tuple[str, 
         if card_values.is_curse(row["name"], row["type"])
         and card_values.normalize(row["name"]) not in card_values.UNREMOVABLE
     )
-    potions = _sequence(facts.get("potions"))
-    empty = 0
-    for slot in potions:
-        name = slot.get("name") or slot.get("id") if isinstance(slot, Mapping) else slot
-        if name in (None, "") or normalize_event(name) in {"potion slot", "empty", "empty slot"}:
-            empty += 1
+    empty = _empty_potion_slots(facts.get("potions"))
     return EventContext(
         labels=labels,
         texts=texts,
@@ -668,6 +678,15 @@ def _event_context(state: GameState, labels: tuple[str, ...], texts: tuple[str, 
         curses=curses,
         empty_potion_slots=empty,
     )
+
+
+def _empty_potion_slots(potions: object) -> int:
+    empty = 0
+    for slot in _sequence(potions):
+        name = slot.get("name") or slot.get("id") if isinstance(slot, Mapping) else slot
+        if name in (None, "") or normalize_event(name) in {"potion slot", "empty", "empty slot"}:
+            empty += 1
+    return empty
 
 
 def _target_count(text: str) -> int:
