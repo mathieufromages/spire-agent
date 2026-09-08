@@ -19,3 +19,4 @@ venv/
 /runtime/
 log/
 /logs/
+/runtime[0-9]*/

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from gym_sts import constants as sts_constants
 from gym_sts import exceptions as sts_exceptions
-from gym_sts.envs.base import SlayTheSpireGymEnv
+from gym_sts.envs.base import SlayTheSpireGymEnv, mod_the_spire_config_root
 
 from spire_agent.adapters import GymStsSession, SeedRequest
 from spire_agent.configuration import (
@@ -312,6 +312,10 @@ def run(
         on_sts_seed=bind_run,
         rejected_exceptions=(sts_exceptions.StSError,),
         fatal_exceptions=(sts_exceptions.StSTimeoutError,),
+        # One game launch at a time per user: CommunicationMod's config file
+        # is global, so parallel instances (separate --runtime-dir) must not
+        # start their games concurrently.
+        launch_lock=mod_the_spire_config_root() / "CommunicationMod" / "launch.lock",
     )
     live_decisions: DecisionProvider = RoutedDecisionProvider(
         RoomScopeRouter(),

@@ -6,8 +6,12 @@
 #
 # The .env next to this script supplies MODEL_URL / MODEL / API_KEY and
 # STS_JRE_DIR. It is gitignored; never commit it.
+#
+# SPIRE_RUNTIME_DIR=runtime2 ./run_bot.sh ...   uses a second game sandbox
+# (<dir>/lib, <dir>/mods copied from runtime/) so two bots can play at once.
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+RUNTIME_DIR="${SPIRE_RUNTIME_DIR:-runtime}"
 
 if [[ -f .env ]]; then
   set -a
@@ -31,11 +35,23 @@ fi
 # and (with the AchievementEnabler mod in config.yaml run.extra_mods) real
 # achievements on your account. SPIRE_STEAM=0 disables it.
 if [[ "${SPIRE_STEAM:-1}" == "0" ]]; then
-  rm -f runtime/lib/steam_appid.txt runtime/tmp/steam_appid.txt
+  rm -f "$RUNTIME_DIR/lib/steam_appid.txt" "$RUNTIME_DIR/tmp/steam_appid.txt"
 else
-  mkdir -p runtime/lib
-  printf '646570\n' > runtime/lib/steam_appid.txt
+  mkdir -p "$RUNTIME_DIR/lib"
+  printf '646570\n' > "$RUNTIME_DIR/lib/steam_appid.txt"
 fi
+
+# Per-instance Java temp dir. steamworks4j re-extracts libsteam_api.so and
+# libsteamworks4j.so into <java.io.tmpdir>/steamworks4j/<version>/ on every
+# game start, overwriting files another running game has mapped; the game
+# attached to Steam then dies with SIGSEGV in SteamTicker.run() (2026-09-08,
+# every launch of a second instance killed the first). libgdx natives live
+# there too. The JVM ignores TMPDIR, so use JAVA_TOOL_OPTIONS.
+mkdir -p "$RUNTIME_DIR/javatmp"
+case "${JAVA_TOOL_OPTIONS:-}" in
+  *java.io.tmpdir=*) ;;  # already set (headless re-exec or caller)
+  *) export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$PWD/$RUNTIME_DIR/javatmp${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}" ;;
+esac
 
 # Headless mode: SPIRE_HEADLESS=1 runs the bot (and therefore the game it
 # spawns) inside gamescope's headless backend, an off-screen GPU-accelerated
@@ -51,4 +67,7 @@ if [[ "${SPIRE_HEADLESS:-0}" == "1" && -z "${SPIRE_HEADLESS_INNER:-}" ]]; then
   exec gamescope --backend headless -W "$gs_w" -H "$gs_h" -- "$0" "$@"
 fi
 
+if [[ -n "${SPIRE_RUNTIME_DIR:-}" ]]; then
+  set -- --runtime-dir "$RUNTIME_DIR" "$@"
+fi
 exec uv run spire-agent "$@"

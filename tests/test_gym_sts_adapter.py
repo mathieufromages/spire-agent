@@ -277,3 +277,40 @@ class GymStsSessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LaunchLockTests(unittest.TestCase):
+    """Parallel bot instances must not launch their games at the same time."""
+
+    def test_reset_holds_exclusive_launch_lock(self) -> None:
+        import fcntl
+        import tempfile
+        from pathlib import Path
+
+        seen: list[bool] = []
+
+        class LockCheckingEnv(FakeEnv):
+            def __init__(self, initial: dict, lock: Path) -> None:
+                super().__init__(initial)
+                self.lock = lock
+
+            def reset(self, **kwargs):
+                with self.lock.open("a") as handle:
+                    try:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        seen.append(True)
+                    else:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                        seen.append(False)
+                return super().reset(**kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "nested" / "launch.lock"
+            env = LockCheckingEnv(raw_state("EVENT"), lock)
+            session = GymStsSession(env, launch_lock=lock)
+            session.reset()
+            self.assertEqual(seen, [True])
+            with lock.open("a") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

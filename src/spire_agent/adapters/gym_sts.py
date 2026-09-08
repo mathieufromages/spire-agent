@@ -7,9 +7,12 @@ or any object exposing that mapping as ``.state``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+import fcntl
 from hashlib import sha256
 import json
+from pathlib import Path
 from typing import Any
 
 from spire_agent.contracts import (
@@ -228,8 +231,10 @@ class GymStsSession:
         on_sts_seed: Callable[[str], object] | None = None,
         rejected_exceptions: tuple[type[BaseException], ...] = (),
         fatal_exceptions: tuple[type[BaseException], ...] = (),
+        launch_lock: Path | None = None,
     ) -> None:
         self._env = env
+        self._launch_lock = launch_lock
         self._adapter = adapter or GymStsObservationAdapter()
         self._stability_policy = stability_policy or StabilityPolicy()
         self._reset_kwargs = dict(reset_kwargs or {})
@@ -245,7 +250,8 @@ class GymStsSession:
         reset = getattr(self._env, "reset", None)
         if not callable(reset):
             raise GymStsSessionError("gym-sts environment has no reset()")
-        result = reset(**self._reset_kwargs)
+        with self._hold_launch_lock():
+            result = reset(**self._reset_kwargs)
         observation, reset_info = self._reset_result(result)
         sts_seed = reset_info.get("sts_seed", getattr(self._env, "sts_seed", None))
         if sts_seed in (None, ""):
@@ -256,6 +262,30 @@ class GymStsSession:
         observation = self._settle(None, observation, "reset")
         self._current_observation = observation
         return self._adapt(observation)
+
+    @contextmanager
+    def _hold_launch_lock(self) -> Iterator[None]:
+        """Serialize game launches across bot instances on this machine.
+
+        gym-sts writes CommunicationMod's per-user ``config.properties`` (the
+        bridge command with this process's socket ports) right before it
+        starts the game, and the game reads that file while its mods load.
+        Two instances launching at the same time would therefore hand one
+        game the other's ports.  Holding an exclusive file lock for the whole
+        ``reset()`` (write config, start game, receive the first state through
+        the bridge) closes that window; a second instance simply waits.
+        """
+
+        if self._launch_lock is None:
+            yield
+            return
+        self._launch_lock.parent.mkdir(parents=True, exist_ok=True)
+        with self._launch_lock.open("a") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def execute(self, command: str) -> ExecutionResult:
         self._ensure_open()
