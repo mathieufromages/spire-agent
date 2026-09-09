@@ -11,7 +11,10 @@ _BOSS_RELICS = {
     "black blood": 8.2,
     "frozen core": 7.8,
     "nuclear battery": 7.8,
-    "coffee dripper": 7.6,
+    # Coffee Dripper turns the bot's main HP tool off: 9 recorded Dripper runs
+    # produced 1 Heart kill, 4 died before the Heart, and the rest entered the
+    # Heart at 42-80% after the Act 4 elite with no rest to recover.
+    "coffee dripper": 5.4,
     "empty cage": 7.6,
     "astrolabe": 7.2,
     # Runic Pyramid retains the Heart's Wounds/Dazed forever (run 10: Reaper+
