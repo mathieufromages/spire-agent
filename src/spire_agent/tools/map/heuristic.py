@@ -25,6 +25,7 @@ from spire_agent.tools.map.tool import (
     forced_map_choice,
     render_map,
 )
+from spire_agent.tools.run_keys import key_view
 
 
 _MAX_PATHS = 40_000
@@ -55,7 +56,11 @@ class HeuristicMapTool(MapTool):
                 str(gate.get("source") or "map.single_choice"),
                 str(gate.get("reason") or "only legal exit"),
             )
-        option, score, summary = choose_route(state, options)
+        try:
+            need_emerald = not key_view(request.shared, state)["emerald"]
+        except (KeyError, TypeError, ValueError):
+            need_emerald = False
+        option, score, summary = choose_route(state, options, need_emerald=need_emerald)
         reason = f"{summary} (score {score:.1f})"
         if gate.get("reason"):
             reason = f"{gate['reason']}; {reason}"
@@ -63,18 +68,37 @@ class HeuristicMapTool(MapTool):
 
 
 def choose_route(
-    state: GameState, options: Sequence[Mapping[str, object]]
+    state: GameState, options: Sequence[Mapping[str, object]], *, need_emerald: bool = False
 ) -> tuple[dict[str, object], float, str]:
-    """Return the best option extended with its planned route."""
+    """Return the best option extended with its planned route.
+
+    ``need_emerald``: the Emerald Key is still missing.  In Act 3 the plan
+    then has to pass through the Burning Elite (the route gate only keeps it
+    *reachable*, so the planner used to dodge it until it was the only exit
+    left: run 24I4U0C8BFNH8 was funnelled into M, M, M, E* at 37% HP with no
+    potion and died on the first hallway).  Earlier acts get a bonus for a
+    healthy Burning Elite so the key is usually banked before Act 3.
+    """
 
     nodes = _map_nodes(state)
     context = _context(state)
-    best: tuple[float, int, dict[str, object], str] | None = None
+    context["need_emerald"] = 1.0 if need_emerald else 0.0
+    candidates: list[tuple[Mapping[str, object], list[tuple[tuple[int, int], ...]]]] = []
     for option in options:
         root = _coordinate(str(option.get("node") or ""))
         if root is None or root not in nodes:
             continue
-        paths = _enumerate_paths(root, nodes)
+        candidates.append((option, _enumerate_paths(root, nodes)))
+    if need_emerald and int(context["act"]) >= 3:
+        through = [
+            (option, [path for path in paths if any(nodes[c][0] == "E*" for c in path)])
+            for option, paths in candidates
+        ]
+        through = [(option, paths) for option, paths in through if paths]
+        if through:
+            candidates = through
+    best: tuple[float, int, dict[str, object], str] | None = None
+    for option, paths in candidates:
         if not paths:
             # No explicit edge to the boss (e.g. partial map data): score the
             # forced segment we do know about instead of failing.
@@ -165,6 +189,10 @@ def _score_rooms(rooms: Sequence[str], context: Mapping[str, float]) -> float:
             if room == "E*":
                 cost *= 1.15
             value = (3.2, 2.2, 0.8, 0.0)[min(elites - 1, 3)]
+            if room == "E*" and context.get("need_emerald"):
+                # The Emerald Key: worth a healthy fight in Acts 1-2 (5 of 6
+                # recorded early takers reached the Heart), mandatory in Act 3.
+                value += 2.0 if act < 3 else 3.0
             if ratio < 0.55:
                 value -= 3.0
             elif ratio < 0.70:

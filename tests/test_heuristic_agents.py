@@ -118,6 +118,38 @@ class HeuristicMapTests(unittest.TestCase):
         self.assertEqual(wounded.command, "choose 1")
         self.assertIn("Rest", wounded.payload[RUN_ROUTE_KEY]["planned_rooms"])
 
+    def test_act_three_plan_goes_through_the_burning_elite_when_the_key_is_missing(self):
+        from spire_agent.tools.map.heuristic import choose_route
+        from spire_agent.tools.map.tool import render_map
+
+        # Two exits: a quiet lane (event, rest) and a Burning Elite lane; both reach the boss.
+        nodes = [
+            {"x": 0, "y": 0, "symbol": "?", "children": [{"x": 0, "y": 1}]},
+            {"x": 0, "y": 1, "symbol": "R", "children": [{"x": 3, "y": 16}]},
+            {"x": 2, "y": 0, "symbol": "E*", "children": [{"x": 2, "y": 1}]},
+            {"x": 2, "y": 1, "symbol": "R", "children": [{"x": 3, "y": 16}]},
+        ]
+        state = map_state(hp=80, act=3, nodes=nodes)
+        _graph, options = render_map(state)
+        option, _score, _summary = choose_route(state, options, need_emerald=True)
+        self.assertIn("Burning Elite", option["planned_rooms"])
+        # Wounded: the elite is avoided unless the key still has to come from it.
+        wounded = map_state(hp=40, act=3, nodes=nodes)
+        _graph, options = render_map(wounded)
+        option, _score, _summary = choose_route(wounded, options, need_emerald=False)
+        self.assertNotIn("Burning Elite", option["planned_rooms"])
+        option, _score, _summary = choose_route(wounded, options, need_emerald=True)
+        self.assertEqual(option["planned_rooms"], ["Burning Elite", "Rest", "Boss"])
+
+    def test_healthy_early_run_banks_the_emerald_key(self):
+        from spire_agent.tools.map.heuristic import _score_rooms
+        base = {"act": 1, "floor": 6, "hp": 76.0, "max_hp": 80.0, "gold": 99.0, "ascension": 0.0, "rest_heals": 1.0, "regal_pillow": 0.0}
+        plain = _score_rooms(["M", "E*", "R"], base)
+        keyed = _score_rooms(["M", "E*", "R"], {**base, "need_emerald": 1.0})
+        self.assertGreater(keyed, plain + 1.5)
+        # A wounded run still avoids it.
+        self.assertLess(_score_rooms(["M", "E*", "R"], {**base, "hp": 30.0, "need_emerald": 1.0}), _score_rooms(["M", "?", "R"], {**base, "hp": 30.0, "need_emerald": 1.0}))
+
     def test_rich_run_routes_through_the_shop(self):
         from spire_agent.tools.map.heuristic import _score_rooms
         base = {"act": 2, "floor": 20, "hp": 70.0, "max_hp": 80.0, "ascension": 0.0, "rest_heals": 1.0, "regal_pillow": 0.0}
@@ -234,6 +266,16 @@ class HeuristicValueTableTests(unittest.TestCase):
         # Act 4 potions outrank every shop relic.
         self.assertGreater(shop_potion_value("Speed Potion", 4), shop_relic_value("Ice Cream", 250, 4, 53))
         self.assertLess(shop_potion_value("Speed Potion", 3), shop_relic_value("Ice Cream", 250, 3, 38))
+
+    def test_defends_stay_when_the_deck_has_no_other_block(self):
+        from spire_agent.tools.heuristics.cards import removal_targets
+
+        thin = [{"name": "Defend", "count": 3}, {"name": "Bash", "count": 1}, {"name": "Demon Form", "count": 1}]
+        self.assertEqual(removal_targets(thin, 1), ["Bash"])
+        blocky = thin + [{"name": "Shrug It Off", "count": 2}, {"name": "Iron Wave", "count": 1}, {"name": "Metallicize", "count": 1}]
+        self.assertEqual(removal_targets(blocky, 1), ["Defend"])
+        # Strikes still go first either way.
+        self.assertEqual(removal_targets(thin + [{"name": "Strike", "count": 2}], 1), ["Strike"])
 
     def test_juggernaut_is_a_core_for_a_barricade_deck(self):
         from spire_agent.tools.heuristics.cards import core_preference

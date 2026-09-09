@@ -277,14 +277,34 @@ def deck_rows(deck: object) -> list[dict[str, object]]:
     return rows
 
 
+# Cards that block on their own; a deck with fewer than _MIN_BLOCK_SOURCES of
+# them keeps its Defends (4 recorded decks reached Act 3 with no Defend and
+# 3 of them died; 24I4U0C8BFNH8 lost 23-30 HP per hallway fight).
+_BLOCK_SOURCES = frozenset({
+    "shrug it off", "iron wave", "true grit", "second wind", "impervious",
+    "flame barrier", "ghostly armor", "power through", "entrench", "sentinel",
+    "armaments", "metallicize", "leap", "steam barrier", "hologram", "glacier",
+    "reinforced body", "boot sequence", "chill", "auto-shields", "stack",
+    "genetic algorithm", "coolheaded", "charge battery", "reboot",
+})
+_MIN_BLOCK_SOURCES = 4
+
+
 def removal_targets(deck: object, count: int = 1, *, exclude: Iterable[str] = ()) -> list[str]:
     """Return up to ``count`` base card names, worst first, that may be removed."""
 
     skip = {normalize(item) for item in exclude}
+    rows = deck_rows(deck)
+    block_sources = sum(1 for row in rows if normalize(row["name"]) in _BLOCK_SOURCES)
+    keep_defends = block_sources < _MIN_BLOCK_SOURCES
     ranked = sorted(
         (
-            (removal_value(row["name"] + ("+" if row["upgraded"] else "")), row["name"])
-            for row in deck_rows(deck)
+            (
+                removal_value(row["name"] + ("+" if row["upgraded"] else ""))
+                - (40.0 if keep_defends and normalize(row["name"]) == "defend" else 0.0),
+                row["name"],
+            )
+            for row in rows
             if normalize(row["name"]) not in UNREMOVABLE and normalize(row["name"]) not in skip
         ),
         key=lambda item: (-item[0], item[1]),
