@@ -254,7 +254,7 @@ class HeuristicBuildStage:
             cid = next((i for i, label in enumerate(labels) if label == normalize_event(name)), None)
             if cid is None or price <= 0 or price > gold:
                 continue
-            value = shop_relic_value(name, price)
+            value = shop_relic_value(name, price, act, state.facts.get("floor"))
             if value is None:
                 continue
             options.append((value, price, f"choose {cid}", f"buy relic {name}", (), {}))

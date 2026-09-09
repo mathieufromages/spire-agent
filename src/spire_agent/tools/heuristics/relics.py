@@ -109,11 +109,22 @@ def boss_relic_value(name: object) -> float:
     return _BOSS_RELICS.get(normalize(name), 4.5)
 
 
-def shop_relic_value(name: object, price: float) -> float | None:
+# Gold/shop economy relics pay off over future shops; with none left they are
+# dead (run 1RNKX1FUYADUD spent 149 of 167 gold on Membership Card in the
+# Act 4 shop and entered the Heart with one potion in five slots).
+_ECONOMY_RELICS = frozenset(
+    {"membership card", "meal ticket", "maw bank", "old coin", "smiling mask", "the courier", "ceramic fish"}
+)
+_ECONOMY_LAST_FLOOR = 44
+
+
+def shop_relic_value(name: object, price: float, act: object = 1, floor: object = 0) -> float | None:
     """Return a purchase score, or None when the relic must not be bought."""
 
     key = normalize(name)
     if key in _SHOP_AVOID:
+        return None
+    if key in _ECONOMY_RELICS and (_int(act) >= 4 or _int(floor) > _ECONOMY_LAST_FLOOR):
         return None
     if key in _SHOP_RELICS:
         return _SHOP_RELICS[key]
@@ -125,11 +136,17 @@ def shop_potion_value(name: object, act: object = 1) -> float:
     """Purchase score for a shop potion; Acts 3-4 pay extra for the Heart."""
 
     value = _SHOP_POTIONS.get(normalize(name), 1.1)
+    stage = _int(act)
+    # Act 4: the Heart is the only fight left, so a potion outranks any shop
+    # relic (5 of 14 recorded Heart entries carried no potion at all).
+    return value + (1.0 if stage >= 4 else 0.4 if stage == 3 else 0.0)
+
+
+def _int(value: object) -> int:
     try:
-        late = int(act) >= 3
+        return int(value)
     except (TypeError, ValueError):
-        late = False
-    return value + (0.4 if late else 0.0)
+        return 0
 
 
 __all__ = ["boss_relic_value", "shop_potion_value", "shop_relic_value"]

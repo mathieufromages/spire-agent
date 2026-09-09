@@ -223,6 +223,31 @@ class HeuristicRestTests(unittest.TestCase):
         self.assertEqual(build_agent().decide(request(owned, shared=shared)).command, "choose 1")
 
 
+class HeuristicValueTableTests(unittest.TestCase):
+    def test_economy_relics_are_dead_without_future_shops(self):
+        from spire_agent.tools.heuristics.relics import shop_relic_value, shop_potion_value
+
+        self.assertIsNotNone(shop_relic_value("Membership Card", 149, 3, 38))
+        self.assertIsNone(shop_relic_value("Membership Card", 149, 3, 46))
+        self.assertIsNone(shop_relic_value("Meal Ticket", 100, 4, 53))
+        self.assertIsNotNone(shop_relic_value("Kunai", 150, 4, 53))
+        # Act 4 potions outrank every shop relic.
+        self.assertGreater(shop_potion_value("Speed Potion", 4), shop_relic_value("Ice Cream", 250, 4, 53))
+        self.assertLess(shop_potion_value("Speed Potion", 3), shop_relic_value("Ice Cream", 250, 3, 38))
+
+    def test_juggernaut_is_a_core_for_a_barricade_deck(self):
+        from spire_agent.tools.heuristics.cards import core_preference
+
+        deck = [{"name": "Barricade", "count": 1}, {"name": "Strike", "count": 4}]
+        found = core_preference(deck, ["Perfected Strike", "Havoc", "Juggernaut"], None, 3)
+        self.assertEqual(found[0], 2)
+        self.assertIn("barricade", found[1].lower())
+        found = core_preference(deck, ["Perfected Strike", "Havoc", "Juggernaut"], "Flame Barrier", 3)
+        self.assertEqual(found[0], 2)
+        # Without Barricade Juggernaut stays an ordinary pick.
+        self.assertIsNone(core_preference([{"name": "Strike", "count": 4}], ["Juggernaut"], None, 3))
+
+
 class HeuristicShopTests(unittest.TestCase):
     def shop(self, gold, *, choices, cards=(), relics=(), purge_cost=75):
         return build_state(

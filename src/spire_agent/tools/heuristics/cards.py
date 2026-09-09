@@ -96,6 +96,10 @@ HEART_FINISHERS = frozenset({
     "shockwave", "disarm",
 })
 _TRUE_FINISHERS = frozenset({"reaper", "fiend fire", "immolate", "whirlwind", "bludgeon"})
+# Cards that become a scaling core once the deck owns one of the listed
+# enablers (Juggernaut with Barricade: 174 block a turn and still lost the
+# Heart damage race in run 1RNKX1FUYADUD after skipping it on floor 46).
+_SYNERGY_SCALING = {"juggernaut": frozenset({"barricade"})}
 
 # Soft deck-size caps per act (physical cards, curses included).  Above the cap
 # only cards at or above the paired pick value are worth a slot; above the hard
@@ -219,8 +223,13 @@ def core_preference(deck: object, offered: Sequence[object], current: object, ac
         key = normalize(base_name(name))
         if pick_veto(deck, name, act) is not None:
             continue
-        if key in HEART_SCALING and key not in owned:
-            reason = f"{base_name(name)} is a missing scaling core"
+        synergy = bool(owned & _SYNERGY_SCALING.get(key, frozenset()))
+        if (key in HEART_SCALING or synergy) and key not in owned:
+            reason = (
+                f"{base_name(name)} scales with {', '.join(sorted(owned & _SYNERGY_SCALING[key]))}"
+                if synergy and key not in HEART_SCALING
+                else f"{base_name(name)} is a missing scaling core"
+            )
             score = pick_value(name) + 100.0
         elif (
             key in HEART_FINISHERS
