@@ -150,6 +150,13 @@ class HeuristicMapTests(unittest.TestCase):
         # A wounded run still avoids it.
         self.assertLess(_score_rooms(["M", "E*", "R"], {**base, "hp": 30.0, "need_emerald": 1.0}), _score_rooms(["M", "?", "R"], {**base, "hp": 30.0, "need_emerald": 1.0}))
 
+    def test_cursed_key_makes_chests_unattractive(self):
+        from spire_agent.tools.map.heuristic import _score_rooms
+        base = {"act": 2, "floor": 20, "hp": 70.0, "max_hp": 80.0, "gold": 99.0, "ascension": 0.0, "rest_heals": 1.0, "regal_pillow": 0.0}
+        self.assertGreater(_score_rooms(["T", "M"], base), _score_rooms(["?", "M"], base))
+        cursed = {**base, "cursed_key": 1.0}
+        self.assertLess(_score_rooms(["T", "M"], cursed), _score_rooms(["?", "M"], cursed))
+
     def test_rich_run_routes_through_the_shop(self):
         from spire_agent.tools.map.heuristic import _score_rooms
         base = {"act": 2, "floor": 20, "hp": 70.0, "max_hp": 80.0, "ascension": 0.0, "rest_heals": 1.0, "regal_pillow": 0.0}

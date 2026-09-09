@@ -159,6 +159,7 @@ def _context(state: GameState) -> dict[str, float]:
         "ascension": float(facts.get("ascension_level") or 0),
         "rest_heals": 0.0 if relics & _NO_HEAL_RELICS else 1.0,
         "regal_pillow": 1.0 if "regal pillow" in relics else 0.0,
+        "cursed_key": 1.0 if "cursed key" in relics else 0.0,
     }
 
 
@@ -223,7 +224,10 @@ def _score_rooms(rooms: Sequence[str], context: Mapping[str, float]) -> float:
                 score += 0.25 + max(0.0, spendable - 300.0) / 300.0
             gold = max(0.0, expected_gold - min(expected_gold, 250.0)) - 12.0 * index
         elif room == "T":
-            score += 1.2
+            # With Cursed Key every chest adds a curse the bot rarely removes
+            # (6 of 7 recorded Cursed Key runs ended with 1-3 curses; run
+            # 489ZFTZYT9F1U lost the Collector fight under Normality).
+            score += -0.5 if context.get("cursed_key") else 1.2
         else:
             score += 0.3
         if hp <= 0:
