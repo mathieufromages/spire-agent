@@ -41,6 +41,12 @@ def combat_state(*, heart=False, potion_count=5, current_hp=50):
     )
 
 
+def boss_state(*, potion_count=3, current_hp=50):
+    base = combat_state(potion_count=potion_count, current_hp=current_hp)
+    facts = {**base.facts, "act": 3, "act_boss": "Time Eater", "room_type": "MonsterRoomBoss"}
+    return GameState(AgentKind.COMBAT, "seed:a3:f50:boss:combat", base.screen, facts=facts, combat=base.combat)
+
+
 def result(end_hp, *, credible=True, search_id="test"):
     return MCTSResult(
         "end",
@@ -201,6 +207,25 @@ class PotionGateTests(unittest.TestCase):
             search.calls,
             [((0, 1, 2, 3, 4), None, "potion_final")],
         )
+
+    def test_boss_without_a_credible_win_releases_everything(self):
+        state = boss_state()
+        baseline = result(5, credible=False)
+        search = FakeSearch({"default": 5})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            PotionGate(runs).select(state, baseline, search)
+        self.assertEqual(search.calls, [((0, 1, 2), None, "potion_final")])
+
+        # A boss emergency that still has winning lines keeps the probe logic.
+        credible = boss_state()
+        search = FakeSearch({"default": 40})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            PotionGate(runs).select(credible, result(5, credible=True), search)
+        self.assertTrue(search.calls[0][1], "expected a probe first")
 
     def test_emergency_is_rechecked_after_projected_hp_drops_materially(self):
         state = combat_state(potion_count=1)

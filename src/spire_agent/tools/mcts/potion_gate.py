@@ -70,6 +70,13 @@ class PotionGate:
         probes: list[dict[str, Any]] = []
         if is_heart(state):
             selected, reason = available, "HEART_RELEASE_ALL"
+        elif _boss_combat(state) and level == EMERGENCY and before.get("no_credible_win"):
+            # A boss fight the no-potion search cannot win at all: single-potion
+            # probes cannot show a "material gain" either (still zero wins), so
+            # the old logic held every potion to the death (run 3C8DSZRZ85XTB
+            # died to Donu/Deca with Liquid Bronze and Speed Potion unused;
+            # 5 of 27 recorded death fights ended with a usable potion).
+            selected, reason = available, "BOSS_NO_WIN_RELEASE_ALL"
         elif 2 - len(self._released) <= 0:
             selected, reason = (), "COMBAT_BUDGET_EXHAUSTED"
         else:
