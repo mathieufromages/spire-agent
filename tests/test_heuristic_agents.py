@@ -175,10 +175,52 @@ class HeuristicRestTests(unittest.TestCase):
         self.assertEqual(decision.command, "choose 0")
         self.assertIn("threshold 78%", decision.reason)
 
+    def test_elite_then_boss_uses_the_boss_threshold(self):
+        state = build_state(
+            "REST", choices=("rest", "smith"), facts={"current_hp": 66, "max_hp": 90, "act": 3, "floor": 45},
+        )
+        shared = {RUN_ROUTE_KEY: {"planned_rooms": ["Rest", "Shop", "Monster", "Elite", "Rest", "Boss"]}}
+        decision = build_agent().decide(request(state, shared=shared))
+        self.assertEqual(decision.command, "choose 0")
+        self.assertIn("threshold 78%", decision.reason)
+
+        # The same route with a real rest after the elite only needs elite HP.
+        with_key = build_state(
+            "REST",
+            choices=("rest", "smith"),
+            facts={"current_hp": 66, "max_hp": 90, "act": 3, "floor": 45, "has_ruby_key": True},
+        )
+        decision = build_agent().decide(request(with_key, shared=shared))
+        self.assertEqual(decision.command, "choose 1")
+
     def test_recall_stays_deferred_before_act_three(self):
         state = build_state("REST", choices=("rest", "smith", "recall"), facts={"current_hp": 79})
         decision = build_agent().decide(request(state))
         self.assertEqual(decision.command, "choose 1")
+
+    def test_healthy_act_three_rest_recalls_instead_of_smithing(self):
+        state = build_state(
+            "REST", choices=("rest", "smith", "recall"), facts={"current_hp": 80, "max_hp": 90, "act": 3, "floor": 41},
+        )
+        shared = {RUN_ROUTE_KEY: {"planned_rooms": ["Rest", "Monster", "Rest", "Boss"], "future_rests": 1}}
+        decision = build_agent().decide(request(state, shared=shared))
+        self.assertEqual(decision.command, "choose 2")
+        self.assertEqual(decision.source, "build.rest_heuristic")
+        self.assertIn("recall", decision.reason)
+
+        # Low HP still rests; the key is then forced on floor 49.
+        low = build_state(
+            "REST", choices=("rest", "smith", "recall"), facts={"current_hp": 40, "max_hp": 90, "act": 3, "floor": 41},
+        )
+        self.assertEqual(build_agent().decide(request(low, shared=shared)).command, "choose 0")
+
+        # With the key already owned the rest site is a normal smith.
+        owned = build_state(
+            "REST",
+            choices=("rest", "smith", "recall"),
+            facts={"current_hp": 80, "max_hp": 90, "act": 3, "floor": 41, "has_ruby_key": True},
+        )
+        self.assertEqual(build_agent().decide(request(owned, shared=shared)).command, "choose 1")
 
 
 class HeuristicShopTests(unittest.TestCase):

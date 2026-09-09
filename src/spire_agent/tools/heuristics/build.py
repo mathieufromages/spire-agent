@@ -330,6 +330,18 @@ class HeuristicBuildStage:
                 "build.rest_heuristic",
                 f"rest at {current}/{maximum} HP (threshold {threshold:.0%})",
             )
+        recall = find("recall")
+        if recall is not None and needs_ruby and _int(state.facts.get("floor")) < 49:
+            # Floor 49 is always a rest site, so taking the key here instead of
+            # smithing keeps that last stop free to heal (or smith) before the
+            # boss. 17 of 18 recorded runs recalled on floor 49 and every Act 3
+            # boss death entered floor 49 at 35-69% HP with no way to rest.
+            return policy_decision(
+                request,
+                f"choose {recall}",
+                "build.rest_heuristic",
+                f"recall now at {current}/{maximum} HP so the floor 49 rest can heal",
+            )
         if smith is not None:
             targets = card_values.upgrade_targets(deck, 1)
             if targets:
@@ -656,14 +668,18 @@ def _rest_threshold(shared: Mapping[str, object], *, skip_final_rest: bool = Fal
     names = [normalize_event(room) for room in upcoming]
     rest_indexes = [i for i, name in enumerate(names) if name in {"rest", "r"}]
     final_rest = rest_indexes[-1] if skip_final_rest and rest_indexes else None
+    # The threshold is the hardest encounter before the next heal, so an
+    # elite followed by the boss still needs boss HP (run 1F1TK117VYE9E
+    # smithed at 66/90 on floor 45 with Elite, Recall rest, Boss ahead).
+    threshold = _REST_THRESHOLD
     for index, name in enumerate(names):
         if name in {"rest", "r"} and index != final_rest:
             break
         if name in {"boss"}:
             return _REST_THRESHOLD_BOSS
         if name in {"elite", "burning elite", "e", "e*"}:
-            return _REST_THRESHOLD_ELITE
-    return _REST_THRESHOLD
+            threshold = max(threshold, _REST_THRESHOLD_ELITE)
+    return threshold
 
 
 def _event_context(state: GameState, labels: tuple[str, ...], texts: tuple[str, ...]) -> EventContext:
