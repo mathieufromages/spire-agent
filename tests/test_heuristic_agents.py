@@ -277,6 +277,19 @@ class HeuristicValueTableTests(unittest.TestCase):
         # Strikes still go first either way.
         self.assertEqual(removal_targets(thin + [{"name": "Strike", "count": 2}], 1), ["Strike"])
 
+    def test_heavy_blade_is_a_finisher_for_a_strength_deck(self):
+        from spire_agent.tools.heuristics.cards import core_preference
+
+        deck = [{"name": "Demon Form", "count": 1}, {"name": "Fiend Fire", "count": 1}, {"name": "Strike", "count": 4}]
+        found = core_preference(deck, ["Heavy Blade+", "Shrug It Off", "Twin Strike"], "Shrug It Off", 3)
+        self.assertEqual(found[0], 0)
+        self.assertIn("demon form", found[1].lower())
+        # Without strength scaling it stays an ordinary pick.
+        plain = [{"name": "Fiend Fire", "count": 1}, {"name": "Strike", "count": 4}]
+        self.assertIsNone(core_preference(plain, ["Heavy Blade+", "Shrug It Off"], "Shrug It Off", 3))
+        # A second copy is not forced.
+        self.assertIsNone(core_preference(deck + [{"name": "Heavy Blade", "count": 1}], ["Heavy Blade+", "Shrug It Off"], "Shrug It Off", 3))
+
     def test_juggernaut_is_a_core_for_a_barricade_deck(self):
         from spire_agent.tools.heuristics.cards import core_preference
 

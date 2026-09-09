@@ -100,6 +100,11 @@ _TRUE_FINISHERS = frozenset({"reaper", "fiend fire", "immolate", "whirlwind", "b
 # enablers (Juggernaut with Barricade: 174 block a turn and still lost the
 # Heart damage race in run 1RNKX1FUYADUD after skipping it on floor 46).
 _SYNERGY_SCALING = {"juggernaut": frozenset({"barricade"})}
+# Finishers that only work with an enabler in the deck.  Heavy Blade with
+# Demon Form or Limit Break is the Heart's damage race in one card; strength
+# decks skipped it 9 times in the recorded runs and lost the race in 5.
+_SYNERGY_FINISHERS = {"heavy blade": frozenset({"demon form", "limit break"})}
+_SYNERGY_FINISHER_BONUS = 30.0
 
 # Soft deck-size caps per act (physical cards, curses included).  Above the cap
 # only cards at or above the paired pick value are worth a slot; above the hard
@@ -231,6 +236,14 @@ def core_preference(deck: object, offered: Sequence[object], current: object, ac
                 else f"{base_name(name)} is a missing scaling core"
             )
             score = pick_value(name) + 100.0
+        elif (
+            key in _SYNERGY_FINISHERS
+            and key not in owned
+            and owned & _SYNERGY_FINISHERS[key]
+            and pick_value(name) + _SYNERGY_FINISHER_BONUS >= cur_value + 4
+        ):
+            reason = f"{base_name(name)} scales with {', '.join(sorted(owned & _SYNERGY_FINISHERS[key]))}"
+            score = pick_value(name) + _SYNERGY_FINISHER_BONUS
         elif (
             key in HEART_FINISHERS
             and key not in owned
