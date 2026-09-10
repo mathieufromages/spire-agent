@@ -177,8 +177,11 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertEqual(config.log_dir, ROOT)
         self.assertEqual(config.mcts_threads, 8)
         self.assertEqual(config.mcts_hallway_max_time_ms, 5000)
-        self.assertIsNone(config.mcts_recovery_horizon_turns)
-        self.assertIsNone(config.mcts_recovery_threat)
+        # The live config may or may not set the recovery options; only their
+        # shape is pinned here (values are a tuning decision, see config.yaml).
+        self.assertIn(config.mcts_recovery_horizon_turns, (None, 1, 2, 3, 4))
+        if config.mcts_recovery_threat is not None:
+            self.assertEqual(len(config.mcts_recovery_threat), 2)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
         self.assertEqual(config.extra_mods, ("AchievementEnabler", "superfastmode"))
 

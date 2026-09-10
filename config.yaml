@@ -33,7 +33,12 @@ run:
 paths:
   runtime_dir: runtime  # game lib, mods, temporary files, and bridge output
   log_dir: .            # runs are written below <log_dir>/runs/
-  mcts_binary: 3rd/sts_lightspeed/build/battle-sim
+  # 2026-09-10: build-final/ is submodule commit 19dfc56 (branch
+  # painter/search-tuning: playout mode, recovery_horizon_turns,
+  # recovery_threat). build/battle-sim is the 2026-09-03 binary, kept as the
+  # fallback. To ship a newer binary, build into a fresh directory in the
+  # stsbuild distrobox, run <dir>/test mcts_regression, then repoint this key.
+  mcts_binary: 3rd/sts_lightspeed/build-final/battle-sim
   card_eval_binary: 3rd/sts_lightspeed/build/card-reward-eval
 
 # OpenAI-compatible endpoint. Empty values use MODEL_URL and MODEL.
@@ -66,7 +71,13 @@ mcts:
   # low-HP fights keep max_time_ms. 0 disables the tier.
   hallway_max_time_ms: 5000
   # Fixed-horizon fallback used when the complete-combat search finds no
-  # credible win: horizon length in player turns; pressure/overkill weights
-  # penalising a boundary state by the enemy move already set for that turn (2 / 0,0 below are the binary's own defaults).
-  # recovery_horizon_turns: 2
-  # recovery_threat: [0.0, 0.0]
+  # credible win (49% of Heart searches, 14% of Act 2/3 boss searches):
+  # horizon length in player turns, and pressure/overkill weights penalising
+  # a boundary state by the enemy move already set for that turn. The
+  # binary's own defaults are 2 and [0, 0] (comment both keys out to get
+  # them). 3 / [0.5, 1.5] chosen 2026-09-10 from an offline playout A/B over
+  # 51 recorded Heart + Act 3 boss starts (paired vs base: 3 fights gained,
+  # 1 lost; not significant, see STS1_HANDOFF.md). Requires the build-final
+  # binary above; the 2026-09-03 binary rejects these tokens.
+  recovery_horizon_turns: 3
+  recovery_threat: [0.5, 1.5]
