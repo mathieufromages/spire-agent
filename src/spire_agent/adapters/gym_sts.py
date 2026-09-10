@@ -23,6 +23,7 @@ from spire_agent.contracts import (
     SessionRefresh,
 )
 from spire_agent.tools.game_stability import (
+    GameStabilityError,
     StabilityPolicy,
     settle_game_state,
     stable_boundary_key,
@@ -231,6 +232,25 @@ class GymStsSession:
         on_sts_seed: Callable[[str], object] | None = None,
         rejected_exceptions: tuple[type[BaseException], ...] = (),
         fatal_exceptions: tuple[type[BaseException], ...] = (),
+        # CommunicationMod's CommandExecutor runs CLICK and KEY unconditionally
+        # on whatever screen is showing -- it does not check that a click
+        # coordinate or key actually hits a UI element first. In particular
+        # "key confirm" simulates the CONFIRM keybind, which would confirm a
+        # GRID/hand card selection or a reward/death screen if the stall
+        # happened to land on one of those. Neither belongs in a default,
+        # screen-agnostic nudge list, so KEY (and CLICK anywhere but a
+        # guaranteed-empty spot) is excluded here; callers that know their
+        # nudges are safe for the screens they run on may still pass their
+        # own list. "click left 1 1" targets the extreme top-left corner of
+        # the game window, which every screen leaves empty, so the click
+        # cannot activate a button, card, or menu item -- it only wakes up
+        # CommunicationMod's input loop.
+        stall_nudges: tuple[str, ...] = (
+            "wait 60",
+            "state",
+            "click left 1 1",
+        ),
+        stall_recovery_screens: frozenset[str] | None = None,
         launch_lock: Path | None = None,
     ) -> None:
         self._env = env
@@ -241,6 +261,12 @@ class GymStsSession:
         self._on_sts_seed = on_sts_seed
         self._rejected_exceptions = rejected_exceptions
         self._fatal_exceptions = fatal_exceptions
+        self._stall_nudges = tuple(stall_nudges)
+        self._stall_recovery_screens = (
+            None
+            if stall_recovery_screens is None
+            else frozenset(stall_recovery_screens)
+        )
         self._current_observation: object | None = None
         self._sts_seed: str | None = None
         self._closed = False
@@ -298,11 +324,17 @@ class GymStsSession:
 
         try:
             observation = self._send(command)
-        except self._fatal_exceptions:
-            # A transport timeout can mean the command was accepted but its
-            # acknowledgement was lost. Retrying or refreshing it as a normal
-            # rejection would make a replay log ambiguous.
-            raise
+        except self._fatal_exceptions as error:
+            # A transport timeout (or a CommunicationMod readiness stall) can
+            # mean the command was accepted but its acknowledgement was lost,
+            # so we cannot treat it as a normal rejection without making a
+            # replay log ambiguous. Instead we try a few bounded, read-only
+            # nudges to pull a fresh observation out of the stall; if one
+            # works we return it as an *unconfirmed* result (the original
+            # command's effect is unknown) so run_history records that and
+            # the next decision re-observes the real state. If every nudge
+            # also fails, we re-raise the original exception unchanged.
+            return self._recover_stall(command, before, error)
         except self._rejected_exceptions as error:
             return self._rejected(command, str(error))
 
@@ -373,6 +405,60 @@ class GymStsSession:
             wait_frames=self._wait_frames,
             policy=self._stability_policy,
         )
+
+    def _recover_stall(
+        self,
+        command: str,
+        before: object,
+        cause: BaseException,
+    ) -> ExecutionResult:
+        """Try bounded, read-only nudges to pull a fresh state out of a
+        fatal stall.
+
+        Returns an unconfirmed ``ExecutionResult`` for the first nudge whose
+        response both sends *and* settles/adapts cleanly; re-raises
+        ``cause`` unchanged if every nudge fails (or if the current screen
+        is not one we're allowed to recover on). A nudge counts as failed
+        whether it is the send itself that raises, or the follow-up
+        ``_settle``/``_adapt`` -- either a fatal or rejected exception, or
+        ``GameStabilityError``/``GymStsAdapterError`` raised by those calls
+        -- so one bad nudge response falls through to the next nudge instead
+        of escaping or masking ``cause``.
+        """
+
+        if self._stall_recovery_screens is not None:
+            game = _mapping(_raw_state(before).get("game_state"))
+            screen = _screen_type(game)
+            if screen not in self._stall_recovery_screens:
+                raise cause
+
+        nudge_failures = (
+            *self._fatal_exceptions,
+            *self._rejected_exceptions,
+            GameStabilityError,
+            GymStsAdapterError,
+        )
+
+        for nudge in self._stall_nudges:
+            try:
+                observation = self._send(nudge)
+                observation = self._settle(None, observation, "state")
+                adapted = self._adapt(observation)
+            except nudge_failures:
+                continue
+            self._current_observation = observation
+            print(
+                f"W: command {command!r} stalled ({cause}); "
+                f"recovered via {nudge!r}"
+            )
+            return ExecutionResult(
+                command=command,
+                state=adapted,
+                confirmed=False,
+                error=f"communication stall recovered via {nudge!r}: {cause}",
+            )
+
+        raise cause
 
     def _rejected(self, command: str, error: str) -> ExecutionResult:
         observation = self._settle(None, self._refresh(), "state")

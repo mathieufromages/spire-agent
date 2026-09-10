@@ -239,7 +239,7 @@ class GymStsSessionTests(unittest.TestCase):
 
         self.assertTrue(refreshed.changed)
 
-    def test_transport_timeout_is_fatal_and_is_not_refreshed(self):
+    def test_transport_timeout_is_fatal_after_stall_recovery_fails(self):
         class Rejected(Exception):
             pass
 
@@ -262,6 +262,239 @@ class GymStsSessionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(Timeout, "acknowledgement lost"):
             session.execute("choose 0")
+        # Every stall nudge is attempted, in order, before the original
+        # exception is re-raised unchanged. None of the defaults is a KEY
+        # command: CommunicationMod runs KEY unconditionally on whatever
+        # screen is showing, so "key confirm" could confirm a GRID/hand
+        # selection or a reward screen -- unsafe as a screen-agnostic nudge.
+        self.assertEqual(
+            env.commands,
+            ["choose 0", "wait 60", "state", "click left 1 1"],
+        )
+
+    def test_stall_recovery_returns_unconfirmed_result_on_first_working_nudge(self):
+        class Rejected(Exception):
+            pass
+
+        class Timeout(Rejected):
+            pass
+
+        class StallOnceEnv(FakeEnv):
+            def __init__(self, initial):
+                super().__init__(initial)
+                self._raised = False
+
+            def _do_action(self, command: str):
+                self.commands.append(command)
+                if not self._raised:
+                    self._raised = True
+                    raise Timeout("did not reach a ready state")
+                return self.current
+
+        env = StallOnceEnv(raw_state("EVENT"))
+        session = GymStsSession(
+            env,
+            stability_policy=self.policy(),
+            rejected_exceptions=(Rejected,),
+            fatal_exceptions=(Timeout,),
+        )
+        session.reset()
+
+        result = session.execute("choose 7")
+
+        self.assertFalse(result.confirmed)
+        self.assertIn("recovered via", result.error)
+        self.assertEqual(env.commands, ["choose 7", "wait 60"])
+        self.assertEqual(result.state.screen.type, "EVENT")
+
+    def test_stall_recovery_falls_through_a_rejected_nudge_and_still_recovers(self):
+        """A nudge that itself gets rejected (a non-fatal StSError-like
+        exception from the gym-sts receiver, e.g. an 'error' field) must not
+        abort recovery -- it is treated like a failed nudge and we try the
+        next one."""
+
+        class Rejected(Exception):
+            pass
+
+        class Timeout(Rejected):
+            pass
+
+        class RejectedNudgeEnv(FakeEnv):
+            def __init__(self, initial):
+                super().__init__(initial)
+                self._raised = False
+
+            def _do_action(self, command: str):
+                self.commands.append(command)
+                if not self._raised:
+                    self._raised = True
+                    raise Timeout("did not reach a ready state")
+                if command == "wait 60":
+                    raise Rejected("cannot wait: nothing queued")
+                return self.current
+
+        env = RejectedNudgeEnv(raw_state("EVENT"))
+        session = GymStsSession(
+            env,
+            stability_policy=self.policy(),
+            rejected_exceptions=(Rejected,),
+            fatal_exceptions=(Timeout,),
+        )
+        session.reset()
+
+        result = session.execute("choose 7")
+
+        self.assertFalse(result.confirmed)
+        self.assertIn("recovered via 'state'", result.error)
+        self.assertEqual(env.commands, ["choose 7", "wait 60", "state"])
+        self.assertEqual(result.state.screen.type, "EVENT")
+
+    def test_stall_recovery_falls_through_a_settle_failure_and_reraises_cause(self):
+        """A nudge can succeed in ``_send`` but the follow-up settle/refresh
+        can still raise a fatal exception (e.g. the polling 'state' call
+        stalls too). That must also fall through to the next nudge, and if
+        nothing else works the *original* exception is re-raised unchanged
+        -- never the wrapped settle failure."""
+
+        class Rejected(Exception):
+            pass
+
+        class Timeout(Rejected):
+            pass
+
+        class SendSucceedsSettleFailsEnv:
+            def __init__(self, initial: dict, unstable: dict):
+                self.sts_seed = "TESTSTSSEED"
+                self.commands: list[str] = []
+                self._initial = initial
+                self._unstable = unstable
+                self._raised = False
+
+            def reset(self, **kwargs):
+                return {"serialized": True}, {
+                    "observation": self._initial,
+                    "sts_seed": self.sts_seed,
+                }
+
+            def _do_action(self, command: str):
+                self.commands.append(command)
+                if not self._raised:
+                    self._raised = True
+                    raise Timeout("did not reach a ready state")
+                # The first nudge's own send succeeds, but every attempt to
+                # settle or send a later nudge stalls again.
+                if command == "wait 60":
+                    return self._unstable
+                raise Timeout("stalled again")
+
+            def close(self):
+                pass
+
+        initial = raw_state("EVENT", ready=True)
+        unstable = raw_state("EVENT", ready=False)
+        env = SendSucceedsSettleFailsEnv(initial, unstable)
+        session = GymStsSession(
+            env,
+            stability_policy=self.policy(),
+            rejected_exceptions=(Rejected,),
+            fatal_exceptions=(Timeout,),
+        )
+        session.reset()
+
+        with self.assertRaisesRegex(Timeout, "did not reach a ready state"):
+            session.execute("choose 7")
+        # "wait 60" sent fine; settle's follow-up "state" refresh stalled, so
+        # that nudge fell through; the remaining nudges ("state" then
+        # "click left 1 1") were tried and also stalled, so the *original*
+        # exception from "choose 7" was re-raised, not the settle failure.
+        self.assertEqual(
+            env.commands,
+            ["choose 7", "wait 60", "state", "state", "click left 1 1"],
+        )
+
+    def test_stall_recovery_settles_the_recovered_observation(self):
+        class Rejected(Exception):
+            pass
+
+        class Timeout(Rejected):
+            pass
+
+        class StallThenUnstableEnv:
+            """No ``observe()``: forces settle's state refresh through
+            ``_do_action("state")`` so it shows up in ``commands``."""
+
+            def __init__(self, initial: dict, unstable: dict, stable: dict):
+                self.sts_seed = "TESTSTSSEED"
+                self.commands: list[str] = []
+                self._initial = initial
+                self._unstable = unstable
+                self._stable = stable
+                self._raised = False
+
+            def reset(self, **kwargs):
+                return {"serialized": True}, {
+                    "observation": self._initial,
+                    "sts_seed": self.sts_seed,
+                }
+
+            def _do_action(self, command: str):
+                self.commands.append(command)
+                if not self._raised:
+                    self._raised = True
+                    raise Timeout("did not reach a ready state")
+                if command == "wait 60":
+                    return self._unstable
+                return self._stable
+
+            def close(self):
+                pass
+
+        initial = raw_state("EVENT", ready=True)
+        unstable = raw_state("EVENT", ready=False)
+        stable = raw_state("EVENT", ready=True)
+        env = StallThenUnstableEnv(initial, unstable, stable)
+        session = GymStsSession(
+            env,
+            stability_policy=self.policy(),
+            rejected_exceptions=(Rejected,),
+            fatal_exceptions=(Timeout,),
+        )
+        session.reset()
+
+        result = session.execute("choose 7")
+
+        self.assertFalse(result.confirmed)
+        # settle() had to ask for a follow-up "state" refresh because the
+        # nudge's own response was not yet ready for a command.
+        self.assertEqual(env.commands, ["choose 7", "wait 60", "state"])
+        self.assertEqual(result.state.screen.type, "EVENT")
+
+    def test_stall_recovery_reraises_immediately_outside_allowed_screens(self):
+        class Rejected(Exception):
+            pass
+
+        class Timeout(Rejected):
+            pass
+
+        class TimeoutEnv(FakeEnv):
+            def _do_action(self, command: str):
+                self.commands.append(command)
+                raise Timeout("acknowledgement lost")
+
+        env = TimeoutEnv(raw_state("EVENT"))
+        session = GymStsSession(
+            env,
+            stability_policy=self.policy(),
+            rejected_exceptions=(Rejected,),
+            fatal_exceptions=(Timeout,),
+            stall_recovery_screens=frozenset({"SHOP_SCREEN"}),
+        )
+        session.reset()
+
+        with self.assertRaisesRegex(Timeout, "acknowledgement lost"):
+            session.execute("choose 0")
+        # The current screen (EVENT) is not in stall_recovery_screens, so no
+        # nudge is attempted.
         self.assertEqual(env.commands, ["choose 0"])
 
     def test_close_is_idempotent_and_prevents_more_commands(self):
