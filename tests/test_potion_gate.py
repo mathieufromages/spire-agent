@@ -47,6 +47,18 @@ def boss_state(*, potion_count=3, current_hp=50):
     return GameState(AgentKind.COMBAT, "seed:a3:f50:boss:combat", base.screen, facts=facts, combat=base.combat)
 
 
+def entropic_brew_state(*, potions, current_hp=50):
+    """A combat state whose potion belt is exactly `potions` (raw facts entries)."""
+    base = combat_state(potion_count=1, current_hp=current_hp)
+    return GameState(
+        base.owner_hint,
+        base.scope_id,
+        base.screen,
+        facts={**base.facts, "potions": tuple(potions)},
+        combat=base.combat,
+    )
+
+
 def result(end_hp, *, credible=True, search_id="test"):
     return MCTSResult(
         "end",
@@ -253,6 +265,67 @@ class PotionGateTests(unittest.TestCase):
                 ((0,), None, "potion_final"),
             ],
         )
+
+    def test_entropic_brew_excluded_from_full_belt(self):
+        # Full belt (no empty slot): Entropic Brew in slot 0 is a game no-op
+        # (it only fills empty slots) that the simulator over-values and that
+        # settle_game_state() can't confirm, so it must never be exposed.
+        state = entropic_brew_state(
+            potions=(
+                {"id": "EntropicBrew", "name": "Entropic Brew", "can_use": True},
+                {"id": "Block Potion", "name": "Block Potion", "can_use": True},
+                {"id": "SpeedPotion", "name": "Speed Potion", "can_use": True},
+            )
+        )
+
+        self.assertEqual(potion_slots(state), (1, 2))
+
+        # current_hp=50/max_hp=100 with an end_hp of 28 lands in DANGER
+        # (loss_of_max_hp == 0.22, below the 0.35/0.50 EMERGENCY thresholds).
+        baseline = result(28, search_id="baseline")
+        search = FakeSearch({"default": 28})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            selected = PotionGate(runs).select(state, baseline, search)
+
+        self.assertTrue(search.calls, "expected the remaining slots to still be probed")
+        self.assertTrue(
+            all(0 not in call[0] for call in search.calls),
+            f"slot 0 (Entropic Brew) must never be probed or released: {search.calls}",
+        )
+        self.assertEqual(selected.metrics.get("search_id", "baseline"), "baseline")
+
+    def test_entropic_brew_eligible_with_an_empty_slot(self):
+        state = entropic_brew_state(
+            potions=(
+                {"id": "EntropicBrew", "name": "Entropic Brew", "can_use": True},
+                None,
+                None,
+            )
+        )
+
+        self.assertEqual(potion_slots(state), (0,))
+
+    def test_active_slots_excludes_entropic_brew_even_if_previously_authorized(self):
+        state = entropic_brew_state(
+            potions=(
+                {"id": "EntropicBrew", "name": "Entropic Brew", "can_use": True},
+                {"id": "Block Potion", "name": "Block Potion", "can_use": True},
+                {"id": "SpeedPotion", "name": "Speed Potion", "can_use": True},
+            )
+        )
+        gate = PotionGate(object())
+        # Pin the gate's scope to this state so _enter() treats slot 0 as
+        # already authorized from an earlier (pre-fix) decision, rather than
+        # resetting on scope entry.
+        gate._scope = state.scope_id
+        gate._authorized = {0, 1}
+
+        active = gate.active_slots(state)
+
+        self.assertNotIn(0, active)
+        self.assertEqual(active, (1,))
 
     def test_danger_is_rechecked_after_projected_hp_drops_materially(self):
         state = combat_state(potion_count=1, current_hp=80)

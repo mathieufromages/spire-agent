@@ -213,6 +213,7 @@ class PotionGate:
 def potion_slots(state: GameState) -> tuple[int, ...]:
     values = state.facts.get("potions")
     values = values if isinstance(values, Sequence) else ()
+    dead = set(_entropic_brew_dead_slots(state))
     result = []
     for index, raw in enumerate(values[:MAX_POTION_SLOTS]):
         if not isinstance(raw, Mapping) or raw.get("can_use") is False:
@@ -225,6 +226,58 @@ def potion_slots(state: GameState) -> tuple[int, ...]:
             continue
         slot = raw.get("slot", index)
         if isinstance(slot, int) and not isinstance(slot, bool) and 0 <= slot < 5:
+            if slot in dead:
+                continue
+            result.append(slot)
+    return tuple(dict.fromkeys(result))
+
+
+def _is_empty_potion_slot(raw: object) -> bool:
+    if raw is None:
+        return True
+    if not isinstance(raw, Mapping):
+        return False
+    name = "".join(
+        char
+        for char in str(raw.get("id") or raw.get("name") or "").casefold()
+        if char.isalnum()
+    )
+    return not name or name in {"potionslot", "emptypotionslot"}
+
+
+def _entropic_brew_dead_slots(state: GameState) -> tuple[int, ...]:
+    """Slots holding Entropic Brew when the belt has no empty slot.
+
+    Entropic Brew's effect is "fill EMPTY potion slots with random potions".
+    On a full belt it is a game no-op: nothing observable happens, so
+    tools/game_stability.py's settle_game_state() times out waiting for an
+    effect that never occurs and raises GameStabilityError, losing the run
+    (run 3TD0UUPARGEZ0, 000144.json: search chose "potion use 0" for a full
+    belt's Entropic Brew at 87/87 HP against a 20-HP Spheric Guardian and the
+    transition never settled). The bundled simulator does not model this —
+    3rd/sts_lightspeed/src/combat/BattleContext.cpp (~line 2874) treats
+    Entropic Brew as always obtaining random potions regardless of belt
+    space — so the search overvalues using it whenever it is authorized on a
+    full belt. Exclude those slots up front, mirroring the smoke-bomb
+    exclusion below, so they are never probed, released, authorized, or
+    passed to the battle sim.
+    """
+    values = state.facts.get("potions")
+    values = values if isinstance(values, Sequence) else ()
+    slice_ = values[:MAX_POTION_SLOTS]
+    if any(_is_empty_potion_slot(raw) for raw in slice_):
+        return ()
+    result = []
+    for index, raw in enumerate(slice_):
+        if not isinstance(raw, Mapping) or raw.get("can_use") is False:
+            continue
+        name = "".join(
+            char
+            for char in str(raw.get("id") or raw.get("name") or "").casefold()
+            if char.isalnum()
+        )
+        slot = raw.get("slot", index)
+        if name == "entropicbrew" and isinstance(slot, int) and 0 <= slot < 5:
             result.append(slot)
     return tuple(dict.fromkeys(result))
 
