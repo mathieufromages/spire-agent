@@ -1,0 +1,148 @@
+{
+  "arm_labels": [
+    "base",
+    "threat",
+    "h3threat"
+  ],
+  "base_label": "base",
+  "per_arm": {
+    "base": {
+      "playouts": 51,
+      "wins": 31,
+      "win_rate": 0.62,
+      "mean_end_hp_on_win": 61.54838709677419,
+      "mean_end_hp_fraction": 0.41828029673122735,
+      "mean_turns": 8.02,
+      "mean_decisions": 47.66,
+      "errors": 0,
+      "inconclusive": 1,
+      "wall_time_s": 2816.780072240028
+    },
+    "threat": {
+      "playouts": 51,
+      "wins": 31,
+      "win_rate": 0.6078431372549019,
+      "mean_end_hp_on_win": 62.70967741935484,
+      "mean_end_hp_fraction": 0.42340184186403085,
+      "mean_turns": 9.372549019607844,
+      "mean_decisions": 53.76470588235294,
+      "errors": 0,
+      "inconclusive": 0,
+      "wall_time_s": 2911.364855119973
+    },
+    "h3threat": {
+      "playouts": 51,
+      "wins": 34,
+      "win_rate": 0.6666666666666666,
+      "mean_end_hp_on_win": 58.088235294117645,
+      "mean_end_hp_fraction": 0.4292664228788542,
+      "mean_turns": 9.549019607843137,
+      "mean_decisions": 54.86274509803921,
+      "errors": 0,
+      "inconclusive": 0,
+      "wall_time_s": 3039.0473550680326
+    }
+  },
+  "per_category": {
+    "base": {
+      "act3_boss": {
+        "playouts": 29,
+        "wins": 24,
+        "win_rate": 0.8571428571428571,
+        "mean_end_hp_on_win": 64.04166666666667,
+        "mean_end_hp_fraction": 0.6115133355140262,
+        "mean_turns": 9.392857142857142,
+        "mean_decisions": 52.57142857142857,
+        "errors": 0,
+        "inconclusive": 1,
+        "wall_time_s": 2082.080817021022
+      },
+      "heart": {
+        "playouts": 22,
+        "wins": 7,
+        "win_rate": 0.3181818181818182,
+        "mean_end_hp_on_win": 53.0,
+        "mean_end_hp_fraction": 0.17234733828039245,
+        "mean_turns": 6.2727272727272725,
+        "mean_decisions": 41.40909090909091,
+        "errors": 0,
+        "inconclusive": 0,
+        "wall_time_s": 734.6992552190059
+      }
+    },
+    "threat": {
+      "act3_boss": {
+        "playouts": 29,
+        "wins": 25,
+        "win_rate": 0.8620689655172413,
+        "mean_end_hp_on_win": 65.52,
+        "mean_end_hp_fraction": 0.6330797896349982,
+        "mean_turns": 11.448275862068966,
+        "mean_decisions": 62.275862068965516,
+        "errors": 0,
+        "inconclusive": 0,
+        "wall_time_s": 2173.815319257992
+      },
+      "heart": {
+        "playouts": 22,
+        "wins": 6,
+        "win_rate": 0.2727272727272727,
+        "mean_end_hp_on_win": 51.0,
+        "mean_end_hp_fraction": 0.14700818343866473,
+        "mean_turns": 6.636363636363637,
+        "mean_decisions": 42.54545454545455,
+        "errors": 0,
+        "inconclusive": 0,
+        "wall_time_s": 737.549535861981
+      }
+    },
+    "h3threat": {
+      "act3_boss": {
+        "playouts": 29,
+        "wins": 26,
+        "win_rate": 0.896551724137931,
+        "mean_end_hp_on_win": 62.5,
+        "mean_end_hp_fraction": 0.6281619327431526,
+        "mean_turns": 11.206896551724139,
+        "mean_decisions": 62.10344827586207,
+        "errors": 0,
+        "inconclusive": 0,
+        "wall_time_s": 2149.3019745120255
+      },
+      "heart": {
+        "playouts": 22,
+        "wins": 8,
+        "win_rate": 0.36363636363636365,
+        "mean_end_hp_on_win": 43.75,
+        "mean_end_hp_fraction": 0.1670859780577338,
+        "mean_turns": 7.363636363636363,
+        "mean_decisions": 45.31818181818182,
+        "errors": 0,
+        "inconclusive": 0,
+        "wall_time_s": 889.7453805560071
+      }
+    }
+  },
+  "paired_vs_base": {
+    "threat": {
+      "n_paired": 50,
+      "dropped": 1,
+      "wins_gained": 1,
+      "wins_lost": 2,
+      "mean_hp_fraction_delta": -0.0014104180299159006,
+      "sign_test_p": 1.0,
+      "n_pos": 6,
+      "n_neg": 7
+    },
+    "h3threat": {
+      "n_paired": 50,
+      "dropped": 1,
+      "wins_gained": 3,
+      "wins_lost": 1,
+      "mean_hp_fraction_delta": 0.00457145460520393,
+      "sign_test_p": 1.0,
+      "n_pos": 7,
+      "n_neg": 8
+    }
+  }
+}
