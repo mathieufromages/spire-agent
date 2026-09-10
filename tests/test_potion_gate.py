@@ -8,7 +8,7 @@ import unittest
 from spire_agent.contracts import AgentKind, GameState, ScreenState
 from spire_agent.extensions import RunDirectory
 from spire_agent.tools.mcts import MCTSResult, PotionGate
-from spire_agent.tools.mcts.potion_gate import assess_risk, potion_slots
+from spire_agent.tools.mcts.potion_gate import DANGER, EMERGENCY, assess_risk, potion_slots
 
 
 def combat_state(*, heart=False, potion_count=5, current_hp=50):
@@ -45,6 +45,21 @@ def boss_state(*, potion_count=3, current_hp=50):
     base = combat_state(potion_count=potion_count, current_hp=current_hp)
     facts = {**base.facts, "act": 3, "act_boss": "Time Eater", "room_type": "MonsterRoomBoss"}
     return GameState(AgentKind.COMBAT, "seed:a3:f50:boss:combat", base.screen, facts=facts, combat=base.combat)
+
+
+def hallway_state(*, act=2, room_type="MonsterRoom", potion_count=5, current_hp=50):
+    """A combat state in an arbitrary act/room_type, defaulting to the Act 2
+    hallway (floors 17-32, room_type "MonsterRoom") leading to the floor-33
+    boss."""
+    base = combat_state(potion_count=potion_count, current_hp=current_hp)
+    facts = {**base.facts, "act": act, "act_boss": None, "room_type": room_type}
+    return GameState(
+        base.owner_hint,
+        f"seed:a{act}:f20:{room_type.casefold()}:combat",
+        base.screen,
+        facts=facts,
+        combat=base.combat,
+    )
 
 
 def entropic_brew_state(*, potions, current_hp=50):
@@ -342,6 +357,102 @@ class PotionGateTests(unittest.TestCase):
 
         self.assertEqual(calls, [(0,), (0,), (0,)])
         self.assertEqual(selected.metrics["search_id"], "search-3")
+
+    def test_act2_hallway_holds_danger_release_with_healthy_hp_buffer(self):
+        # current_hp=60, end_hp=40 -> loss_of_max_hp=0.20 (DANGER, below the
+        # 0.35 EMERGENCY cutoff), expected_end_hp_of_max=0.40 (>= the 0.35
+        # hold threshold).
+        state = hallway_state(current_hp=60)
+        baseline = result(40, search_id="baseline")
+        risk = assess_risk(state, baseline)
+        self.assertEqual(risk["level"], DANGER)
+        self.assertEqual(risk["expected_end_hp_of_max"], 0.4)
+
+        search = FakeSearch({"default": 40})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            selected = PotionGate(runs).select(state, baseline, search)
+            trace = json.loads(
+                (runs.path / "potion_decisions.jsonl").read_text().splitlines()[0]
+            )
+
+        self.assertEqual(search.calls, [])
+        self.assertIs(selected, baseline)
+        self.assertEqual(trace["reason"], "ACT2_HALLWAY_HOLD_FOR_BOSS")
+        self.assertEqual(trace["selected_slots"], [])
+
+    def test_act2_hallway_still_probes_danger_below_the_buffer_threshold(self):
+        # current_hp=55, end_hp=30 -> loss_of_max_hp=0.25 (DANGER),
+        # expected_end_hp_of_max=0.30 (below the 0.35 hold threshold), so the
+        # hold does not apply and normal DANGER probing proceeds.
+        state = hallway_state(current_hp=55)
+        baseline = result(30, search_id="baseline")
+        risk = assess_risk(state, baseline)
+        self.assertEqual(risk["level"], DANGER)
+        self.assertEqual(risk["expected_end_hp_of_max"], 0.3)
+
+        search = FakeSearch({"default": 30})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            selected = PotionGate(runs).select(state, baseline, search)
+            trace = json.loads(
+                (runs.path / "potion_decisions.jsonl").read_text().splitlines()[0]
+            )
+
+        self.assertTrue(search.calls, "expected normal DANGER probing")
+        self.assertNotEqual(trace["reason"], "ACT2_HALLWAY_HOLD_FOR_BOSS")
+
+    def test_act2_hallway_hold_does_not_apply_at_emergency(self):
+        # current_hp=100, end_hp=40 -> loss_of_max_hp=0.60 (EMERGENCY), with
+        # expected_end_hp_of_max=0.40 still above the hold threshold: the
+        # hold is scoped to DANGER only, so EMERGENCY probing/pair logic is
+        # unaffected.
+        state = hallway_state(current_hp=100)
+        baseline = result(40, search_id="baseline")
+        risk = assess_risk(state, baseline)
+        self.assertEqual(risk["level"], EMERGENCY)
+        self.assertEqual(risk["expected_end_hp_of_max"], 0.4)
+
+        search = FakeSearch({"default": 40})
+        with tempfile.TemporaryDirectory() as directory:
+            runs = RunDirectory(Path(directory) / "runs")
+            runs.bind("ABC123")
+            selected = PotionGate(runs).select(state, baseline, search)
+            trace = json.loads(
+                (runs.path / "potion_decisions.jsonl").read_text().splitlines()[0]
+            )
+
+        self.assertTrue(search.calls, "expected normal EMERGENCY probing")
+        self.assertNotEqual(trace["reason"], "ACT2_HALLWAY_HOLD_FOR_BOSS")
+
+    def test_act2_hallway_hold_is_scoped_to_act2_monsterroom_only(self):
+        # Same DANGER baseline (current_hp=60, end_hp=40 -> loss_of_max_hp
+        # 0.20, expected_end_hp_of_max 0.40) as the holding case above, but
+        # outside Act 2 hallway fights: normal DANGER probing proceeds.
+        for act, room_type in (
+            (1, "MonsterRoom"),
+            (2, "MonsterRoomElite"),
+            (3, "MonsterRoom"),
+        ):
+            with self.subTest(act=act, room_type=room_type):
+                state = hallway_state(act=act, room_type=room_type, current_hp=60)
+                baseline = result(40, search_id="baseline")
+                risk = assess_risk(state, baseline)
+                self.assertEqual(risk["level"], DANGER)
+
+                search = FakeSearch({"default": 40})
+                with tempfile.TemporaryDirectory() as directory:
+                    runs = RunDirectory(Path(directory) / "runs")
+                    runs.bind("ABC123")
+                    selected = PotionGate(runs).select(state, baseline, search)
+                    trace = json.loads(
+                        (runs.path / "potion_decisions.jsonl").read_text().splitlines()[0]
+                    )
+
+                self.assertTrue(search.calls, "expected normal DANGER probing")
+                self.assertNotEqual(trace["reason"], "ACT2_HALLWAY_HOLD_FOR_BOSS")
 
 
 if __name__ == "__main__":

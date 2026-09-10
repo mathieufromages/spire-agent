@@ -14,6 +14,18 @@ from .tool import MCTSResult
 
 SAFE, DANGER, EMERGENCY, UNKNOWN = "SAFE", "DANGER", "EMERGENCY", "UNKNOWN"
 MAX_POTION_SLOTS = 5
+# Survey over 51 Act 2 boss (floor 33) entries, 9 deaths: potions held
+# entering the boss average 0.56 for deaths vs 1.38 for survivors (all 3
+# Champ deaths had 0 potions, all 13 Champ survivors had >= 1). 85% of the
+# dying runs' Act 2 hallway (floors 17-32, room_type MonsterRoom) potion
+# releases happened when the no-potion baseline already projected ending the
+# fight at >= 50% of max HP -- i.e. those potions were spent while there was
+# still plenty of HP buffer, instead of being saved for the boss. Holding
+# DANGER-level releases in Act 2 hallway fights while the baseline already
+# projects ending at >= 35% of max HP blocks 13/26 releases in dying runs
+# (boss-entry potions rise in 6 of 9) and 54/112 in surviving runs, with no
+# Act 2 hallway death observed across 57 runs.
+_ACT2_HALLWAY_RELEASE_END_HP_FRACTION = 0.35
 _SEVERITY = {SAFE: 0, DANGER: 1, EMERGENCY: 2, UNKNOWN: 3}
 
 
@@ -61,6 +73,19 @@ class PotionGate:
                 {**dict(baseline.metrics), "potion_gate": "SMOKE_BOMB_ESCAPE"},
             )
         live_inventory = tuple(potion_slots(state))
+        if level == DANGER and _act2_hallway(state):
+            end_of_max = before.get("expected_end_hp_of_max")
+            if (
+                isinstance(end_of_max, (int, float))
+                and end_of_max >= _ACT2_HALLWAY_RELEASE_END_HP_FRACTION
+            ):
+                # DANGER here is a relative-loss call (assess_risk), not an
+                # absolute-buffer one: hold new releases for the floor-33
+                # boss rather than spending them in the hallway. Slots
+                # authorized by an earlier decision this combat (`active`)
+                # are unaffected -- `baseline` already reflects them.
+                self._record(state, before, (), (), "ACT2_HALLWAY_HOLD_FOR_BOSS")
+                return baseline
         if not available or level in {SAFE, UNKNOWN} or not self._may_decide(
             level, live_inventory, before
         ):
@@ -302,6 +327,16 @@ def _smoke_slots(state: GameState) -> tuple[int, ...]:
 
 def _boss_combat(state: GameState) -> bool:
     return "boss" in str(state.facts.get("room_type") or "").casefold()
+
+
+def _act2_hallway(state: GameState) -> bool:
+    """Act 2 regular fights (floors 17-32, room_type "MonsterRoom") -- the
+    hallway leading to the floor-33 Act 2 boss. Excludes elites
+    ("MonsterRoomElite") and the boss room itself ("MonsterRoomBoss")."""
+    return (
+        state.facts.get("act") == 2
+        and str(state.facts.get("room_type") or "").casefold() == "monsterroom"
+    )
 
 
 def assess_risk(state: GameState, result: MCTSResult) -> dict[str, Any]:
