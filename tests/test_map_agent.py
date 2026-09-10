@@ -18,8 +18,13 @@ from spire_agent.subagents.llm import (
     LLMResponse,
     PromptLanguage,
 )
-from spire_agent.tools.map import DefaultMapTool, MapError, render_map
-from spire_agent.tools.map.tool import _needed_families, _route_at_risk
+from spire_agent.tools.map import DefaultMapTool, HeuristicMapTool, MapError, render_map
+from spire_agent.tools.map.tool import (
+    _map_nodes,
+    _needed_families,
+    _node_id,
+    _route_at_risk,
+)
 
 
 def create_map_agent(llm, *, prompt_language=PromptLanguage.ENGLISH):
@@ -982,6 +987,57 @@ class ConcreteMapAgentTests(unittest.TestCase):
 
         self.assertEqual(decision.command, "choose 0")
         self.assertIn("contains non-edge", decision.metrics["route_error"])
+
+    def test_heuristic_choice_records_full_map_graph(self):
+        state = map_state()
+
+        decision = compose_map_agent(HeuristicMapTool()).decide(request(state))
+
+        nodes = _map_nodes(state)
+        expected_nodes = [
+            {
+                "id": _node_id(coord),
+                "symbol": symbol,
+                "children": [_node_id(child) for child in children],
+            }
+            for coord, (symbol, children) in sorted(nodes.items())
+        ]
+
+        self.assertEqual(decision.source, "map.heuristic")
+        graph = decision.payload["map_graph"]
+        actual_nodes = [
+            {**row, "children": list(row["children"])} for row in graph["nodes"]
+        ]
+        self.assertEqual(actual_nodes, expected_nodes)
+        self.assertEqual(graph["chosen"], decision.payload["next_node"])
+
+    def test_forced_boss_entrance_still_records_map_graph(self):
+        client = FakeLLM({"choice_id": 0, "reason": "unused"})
+        state = map_state(choices=("boss",), current_node={"x": 1, "y": 14})
+
+        decision = create_map_agent(client).decide(request(state))
+
+        self.assertEqual(decision.payload["next_node"], "BOSS")
+        graph = decision.payload["map_graph"]
+        self.assertEqual(graph["chosen"], "BOSS")
+        nodes = _map_nodes(state)
+        expected_ids = {_node_id(coord) for coord in nodes}
+        self.assertEqual({row["id"] for row in graph["nodes"]}, expected_ids)
+
+    def test_missing_map_facts_omit_map_graph_without_raising(self):
+        client = FakeLLM({"choice_id": 0, "reason": "unused"})
+        state = map_state(choices=("boss",), current_node={"x": 1, "y": 14})
+        state = GameState(
+            state.owner_hint,
+            state.scope_id,
+            state.screen,
+            facts={**state.facts, "map": None},
+        )
+
+        decision = create_map_agent(client).decide(request(state))
+
+        self.assertEqual(decision.payload["next_node"], "BOSS")
+        self.assertNotIn("map_graph", decision.payload)
 
 
 if __name__ == "__main__":

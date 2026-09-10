@@ -779,19 +779,39 @@ def _decision(
     source: str,
     reason: str,
 ) -> Decision:
+    # Required choke point for map recording: DefaultMapTool and HeuristicMapTool
+    # both build every MAP Decision through this function, so map_graph capture
+    # lives here and nowhere else.
     route = route_context(option)
     if "encounter_readiness" in route or "rest_readiness" in route:
         route["readiness_fingerprint"] = readiness_fingerprint(state)
+    payload: dict[str, object] = {
+        "choice_id": option["choice_id"],
+        "next_node": option["node"],
+        "room": option["room"],
+        RUN_ROUTE_KEY: route,
+    }
+    try:
+        nodes = _map_nodes(state)
+    except MapError:
+        pass
+    else:
+        payload["map_graph"] = {
+            "nodes": [
+                {
+                    "id": _node_id(coord),
+                    "symbol": symbol,
+                    "children": [_node_id(child) for child in children],
+                }
+                for coord, (symbol, children) in sorted(nodes.items())
+            ],
+            "chosen": str(option["node"]),
+        }
     return Decision(
         f"choose {option['choice_id']}",
         source,
         reason,
-        payload={
-            "choice_id": option["choice_id"],
-            "next_node": option["node"],
-            "room": option["room"],
-            RUN_ROUTE_KEY: route,
-        },
+        payload=payload,
     )
 
 
