@@ -42,6 +42,8 @@ class RuntimeConfig:
     mcts_adaptive_simulations: int
     extra_mods: tuple[str, ...] = ()
     mcts_hallway_max_time_ms: int = 0
+    mcts_recovery_horizon_turns: int | None = None
+    mcts_recovery_threat: tuple[float, float] | None = None
 
     @property
     def requires_llm(self) -> bool:
@@ -77,6 +79,8 @@ _KEYS = {
         "adaptive_time_ms",
         "adaptive_simulations",
         "hallway_max_time_ms",
+        "recovery_horizon_turns",
+        "recovery_threat",
     },
 }
 
@@ -159,6 +163,10 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
     if not all(mcts.values()):
         raise AgentConfigError("mcts values must be positive")
     hallway_ms = _integer(groups["mcts"], "hallway_max_time_ms", 0)
+    recovery_horizon_turns = _optional_integer(
+        groups["mcts"], "recovery_horizon_turns", minimum=1, maximum=4
+    )
+    recovery_threat = _optional_float_pair(groups["mcts"], "recovery_threat")
 
     root = path.resolve().parent
     llm = groups["llm"]
@@ -188,6 +196,8 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
         **{f"mcts_{name}": value for name, value in mcts.items()},
         extra_mods=extra_mods,
         mcts_hallway_max_time_ms=hallway_ms,
+        mcts_recovery_horizon_turns=recovery_horizon_turns,
+        mcts_recovery_threat=recovery_threat,
     )
 
 
@@ -212,6 +222,32 @@ def _integer(
     if maximum is not None and value > maximum:
         raise AgentConfigError(f"{name} must be at most {maximum}")
     return value
+
+
+def _optional_integer(
+    group: Mapping, name: str, *, minimum: int, maximum: int
+) -> int | None:
+    value = group.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AgentConfigError(f"{name} must be an integer")
+    if value < minimum or value > maximum:
+        raise AgentConfigError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _optional_float_pair(group: Mapping, name: str) -> tuple[float, float] | None:
+    value = group.get(name)
+    if value is None:
+        return None
+    if (
+        not isinstance(value, (list, tuple))
+        or len(value) != 2
+        or any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in value)
+    ):
+        raise AgentConfigError(f"{name} must be a two-item list of numbers [pressure, overkill]")
+    return (float(value[0]), float(value[1]))
 
 
 def _path(root: Path, value: object, default: str) -> Path:

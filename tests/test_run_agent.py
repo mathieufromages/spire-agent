@@ -177,8 +177,58 @@ class RuntimeEntryTests(unittest.TestCase):
         self.assertEqual(config.log_dir, ROOT)
         self.assertEqual(config.mcts_threads, 8)
         self.assertEqual(config.mcts_hallway_max_time_ms, 5000)
+        self.assertIsNone(config.mcts_recovery_horizon_turns)
+        self.assertIsNone(config.mcts_recovery_threat)
         self.assertEqual(config.replay_action_delay_seconds, 0.5)
         self.assertEqual(config.extra_mods, ("AchievementEnabler", "superfastmode"))
+
+    def test_recovery_horizon_and_threat_are_parsed_and_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "agents.yaml"
+            base = "agents:\n  map: heuristic\n  build: heuristic\n  combat: mcts\n"
+
+            path.write_text(
+                base + "mcts:\n  recovery_horizon_turns: 3\n  recovery_threat: [1.5, 2]\n",
+                encoding="utf-8",
+            )
+            config = load_runtime_config(path)
+            self.assertEqual(config.mcts_recovery_horizon_turns, 3)
+            self.assertEqual(config.mcts_recovery_threat, (1.5, 2.0))
+
+            path.write_text(
+                base + "mcts:\n  recovery_horizon_turns: 0\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AgentConfigError, "between 1 and 4"):
+                load_runtime_config(path)
+
+            path.write_text(
+                base + "mcts:\n  recovery_horizon_turns: 5\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AgentConfigError, "between 1 and 4"):
+                load_runtime_config(path)
+
+            path.write_text(
+                base + "mcts:\n  recovery_horizon_turns: 2.5\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AgentConfigError, "recovery_horizon_turns must be an integer"):
+                load_runtime_config(path)
+
+            path.write_text(
+                base + "mcts:\n  recovery_threat: [0.0]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AgentConfigError, "two-item list"):
+                load_runtime_config(path)
+
+            path.write_text(
+                base + "mcts:\n  recovery_threat: [0.0, true]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AgentConfigError, "two-item list"):
+                load_runtime_config(path)
 
     def test_extra_mods_accept_list_or_string_and_reject_garbage(self):
         with tempfile.TemporaryDirectory() as directory:

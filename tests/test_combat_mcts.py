@@ -366,6 +366,107 @@ class CombatMCTSToolTests(unittest.TestCase):
             self.assertIn("adaptive_max_time_ms=5000", command)
             self.assertIn("adaptive_max_simulations=50000", command)
 
+    def _minimal_output(self):
+        return {
+            "protocolVersion": 1,
+            "rootCommand": "end",
+            "followUp": None,
+            "score": 0.0,
+            "credibleWinEvidence": True,
+            "rootActions": [],
+        }
+
+    def test_recovery_options_unset_leave_argv_and_settings_unchanged(self):
+        _, state = fixture_state()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "battle-sim"
+            binary.touch(mode=0o755)
+            run_directory = RunDirectory(root / "runs")
+            run_directory.bind("ABC123")
+            search = CombatMCTS(binary, run_directory)
+            self.assertIsNone(search.recovery_horizon_turns)
+            self.assertIsNone(search.recovery_threat)
+            completed = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(self._minimal_output()), stderr=""
+            )
+
+            with patch(
+                "spire_agent.tools.mcts.tool.subprocess.run", return_value=completed
+            ) as invoked:
+                search.choose(state)
+
+            command = invoked.call_args.args[0]
+            self.assertEqual(command[0], str(binary.resolve()))
+            self.assertEqual(
+                command[2:],
+                [
+                    "100000",
+                    "12",
+                    "10000",
+                    "0",
+                    "adaptive_max_time_ms=30000",
+                    "adaptive_max_simulations=500000",
+                ],
+            )
+            self.assertFalse(any(part.startswith("recovery_") for part in command))
+            record = json.loads(
+                next((run_directory.path / "mcts").glob("*.json")).read_text()
+            )
+            self.assertNotIn("recovery_horizon_turns", record["settings"])
+            self.assertNotIn("recovery_threat", record["settings"])
+
+    def test_recovery_options_set_are_appended_after_adaptive_tokens_and_recorded(self):
+        _, state = fixture_state()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "battle-sim"
+            binary.touch(mode=0o755)
+            run_directory = RunDirectory(root / "runs")
+            run_directory.bind("ABC123")
+            search = CombatMCTS(
+                binary,
+                run_directory,
+                recovery_horizon_turns=3,
+                recovery_threat=(1.5, 0.25),
+            )
+            completed = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(self._minimal_output()), stderr=""
+            )
+
+            with patch(
+                "spire_agent.tools.mcts.tool.subprocess.run", return_value=completed
+            ) as invoked:
+                search.choose(state)
+
+            command = invoked.call_args.args[0]
+            self.assertEqual(command[-4:], [
+                "adaptive_max_time_ms=30000",
+                "adaptive_max_simulations=500000",
+                "recovery_horizon_turns=3",
+                "recovery_threat=1.5,0.25",
+            ])
+            record = json.loads(
+                next((run_directory.path / "mcts").glob("*.json")).read_text()
+            )
+            self.assertEqual(record["settings"]["recovery_horizon_turns"], 3)
+            self.assertEqual(record["settings"]["recovery_threat"], [1.5, 0.25])
+
+    def test_recovery_options_are_validated_by_the_constructor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "battle-sim"
+            binary.touch(mode=0o755)
+            run_directory = RunDirectory(root / "runs")
+            run_directory.bind("ABC123")
+
+            with self.assertRaisesRegex(ValueError, "between 1 and 4"):
+                CombatMCTS(binary, run_directory, recovery_horizon_turns=0)
+            with self.assertRaisesRegex(ValueError, "between 1 and 4"):
+                CombatMCTS(binary, run_directory, recovery_horizon_turns=5)
+            with self.assertRaisesRegex(ValueError, "exactly two values"):
+                CombatMCTS(binary, run_directory, recovery_threat=(1.0,))
+
 
 if __name__ == "__main__":
     unittest.main()

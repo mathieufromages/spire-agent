@@ -153,6 +153,8 @@ class CombatMCTS:
         adaptive_time_ms: int = 30_000,
         adaptive_simulations: int = 500_000,
         hallway_max_time_ms: int = 0,
+        recovery_horizon_turns: int | None = None,
+        recovery_threat: Sequence[float] | None = None,
     ) -> None:
         self.binary = Path(binary).resolve()
         self.runs = run_directory
@@ -170,6 +172,19 @@ class CombatMCTS:
             raise ValueError("MCTS limits must be positive")
         if self.hallway_max_time_ms < 0:
             raise ValueError("hallway_max_time_ms must be non-negative")
+        # Fixed-horizon fallback the native search applies when the
+        # complete-combat search finds no credible win. None on either
+        # field means "do not pass" so the argv matches today's exactly.
+        self.recovery_horizon_turns = recovery_horizon_turns
+        if recovery_horizon_turns is not None and not 1 <= recovery_horizon_turns <= 4:
+            raise ValueError("recovery_horizon_turns must be between 1 and 4")
+        if recovery_threat is None:
+            self.recovery_threat: tuple[float, float] | None = None
+        else:
+            recovery_threat = tuple(float(value) for value in recovery_threat)
+            if len(recovery_threat) != 2:
+                raise ValueError("recovery_threat must have exactly two values")
+            self.recovery_threat = recovery_threat
 
     def choose(
         self,
@@ -207,6 +222,10 @@ class CombatMCTS:
             "allowed_potion_slots": list(potion_slots),
             "search_role": search_role,
         }
+        if self.recovery_horizon_turns is not None:
+            settings["recovery_horizon_turns"] = self.recovery_horizon_turns
+        if self.recovery_threat is not None:
+            settings["recovery_threat"] = list(self.recovery_threat)
         binary = self._binary_info()
         started = time.perf_counter()
         stdout = stderr = ""
@@ -244,6 +263,15 @@ class CombatMCTS:
                         f"adaptive_max_simulations={adaptive_simulations}",
                     ]
                 )
+                if self.recovery_horizon_turns is not None:
+                    command.append(
+                        f"recovery_horizon_turns={self.recovery_horizon_turns}"
+                    )
+                if self.recovery_threat is not None:
+                    command.append(
+                        "recovery_threat="
+                        + ",".join(_format_number(v) for v in self.recovery_threat)
+                    )
                 with stdout_file.open("w", encoding="utf-8") as stdout_stream, \
                         stderr_file.open("w", encoding="utf-8") as stderr_stream:
                     process = subprocess.run(
@@ -392,6 +420,12 @@ class CombatMCTS:
             run_path, search_id, request, settings, raw, elapsed, error
         )
         return search_id
+
+
+def _format_number(value: float) -> str:
+    """Render a float for a battle-sim CLI token without a spurious ".0"."""
+
+    return f"{value:g}"
 
 
 def _read_native_stdout(path: Path) -> tuple[str, bool]:

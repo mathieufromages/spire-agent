@@ -65,3 +65,8 @@ mcts:
   # MonsterRoom) while the player is at >= 50% HP. Elites, bosses, Act 3+, and
   # low-HP fights keep max_time_ms. 0 disables the tier.
   hallway_max_time_ms: 5000
+  # Fixed-horizon fallback used when the complete-combat search finds no
+  # credible win: horizon length in player turns; pressure/overkill weights
+  # penalising a boundary state by the enemy move already set for that turn (2 / 0,0 below are the binary's own defaults).
+  # recovery_horizon_turns: 2
+  # recovery_threat: [0.0, 0.0]
